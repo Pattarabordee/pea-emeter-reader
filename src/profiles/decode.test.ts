@@ -37,6 +37,10 @@ describe('decodeRow', () => {
     expect(r[1]).toMatchObject({ key: 'kwhImport', raw: 1000, value: 1000, unit: 'kWh' });
     expect(r[0]).toMatchObject({ value: T.getTime(), missing: false });
   });
+  it('real zero stays present, not missing', () => {
+    const r = decodeRow([dt(T), u32(0)], billingTemplate(1));
+    expect(r[1]).toMatchObject({ raw: 0, value: 0, missing: false });
+  });
   it('short row => trailing cells missing, not 0', () => {
     const r = decodeRow(row1.slice(0, 8), billingTemplate(1));
     expect(r[8]).toMatchObject({ missing: true, value: null, raw: null });
@@ -74,6 +78,11 @@ describe('verifyCapture', () => {
     expect(v.usedLive).toBe(true);
     expect(v.columns.map((c) => c.obis)).toEqual(l);
     expect(v.columns[8]).toMatchObject({ kind: 'u16', scaler: -2, unit: 'V' });
+  });
+  it('load fallback keeps voltageL1Avg, not billing voltageL1Min', () => {
+    const v = verifyCapture(loadTemplate(1), live(loadTemplate(3).map((c) => c.obis)));
+    expect(v.ok).toBe(false);
+    expect(v.columns.map((c) => c.key).slice(2, 5)).toEqual(['voltageL1Avg', 'voltageL2Avg', 'voltageL3Avg']);
   });
   it('unknown obis => u32 scaler 0', () => {
     const v = verifyCapture(billingTemplate(1), live(['0.0.1.0.0.255', '9.9.9.9.9.9']));

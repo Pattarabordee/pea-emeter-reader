@@ -21,6 +21,6 @@ export function decodeRow(row: DlmsData[], cols: ColumnSpec[]): Reading[] {
       return { ...base, raw: ms, value: ms, missing: false };
     }
     if (!cell || !('v' in cell) || typeof cell.v !== 'number') return miss;
-    return { ...base, raw: cell.v, value: cell.v * 10 ** s.scaler, missing: false };
+    return { ...base, raw: cell.v, value: s.scaler < 0 ? cell.v / 10 ** -s.scaler : cell.v * 10 ** s.scaler, missing: false };
   });
 }

@@ -53,9 +53,13 @@ for (const t of [1, 3] as const)
  */
 export function verifyCapture(cols: ColumnSpec[], live: CaptureObject[]): { ok: boolean; usedLive: boolean; columns: ColumnSpec[] } {
   if (cols.length === live.length && cols.every((s, i) => s.obis === live[i].obis)) return { ok: true, usedLive: false, columns: cols };
+  // Voltage obis repeat across profiles with different keys (Min/Avg/none): prefer cols' own spec, and re-suffix known voltage keys to cols' profile.
+  const own = new Map(cols.map((s) => [s.obis, s]));
+  const suffix = cols.find((s) => s.key.startsWith('voltageL1'))?.key.slice(9) ?? '';
   const columns = live.map((o, i) => {
-    const k = KNOWN.get(o.obis);
-    return k ? { ...k } : c(`col${i}`, o.obis, 'u32');
+    const k = own.get(o.obis) ?? KNOWN.get(o.obis);
+    if (!k) return c(`col${i}`, o.obis, 'u32');
+    return /^voltageL\d/.test(k.key) && !own.has(o.obis) ? { ...k, key: k.key.slice(0, 9) + suffix } : { ...k };
   });
   return { ok: false, usedLive: true, columns };
 }
