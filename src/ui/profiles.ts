@@ -77,7 +77,11 @@ export function mountProfiles(root: HTMLElement): void {
   const guarded = async (fn: () => Promise<void>) => {
     if (!shared.client || shared.busy) { if (!shared.client) status.textContent = 'Connect on the Live screen first'; return; }
     shared.busy = true;
-    try { await fn(); } catch (e) { status.textContent = `Error: ${(e as Error).message}`; } finally { shared.busy = false; }
+    try { await fn(); } catch (e) {
+      // DlmsClient has one orphan-able waiter and no cancel: a late reply would be matched to the next GET (silent off-by-one). Drop the link.
+      const msg = `Read failed (${(e as Error).message}) — session closed, reconnect on the Live screen.`;
+      try { await shared.end?.(msg); } finally { status.textContent = msg; }
+    } finally { shared.busy = false; }
   };
 
   const open = (t: (typeof TABS)[number]) => guarded(async () => {

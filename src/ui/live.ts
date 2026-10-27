@@ -41,7 +41,7 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElemen
 };
 
 /** The one connected link, shared with the stored-data screens. `busy` serialises GETs: the Live poll skips a tick while a profile read runs. */
-export const shared: { client?: DlmsClient; meter?: MeterEntry; busy: boolean } = { busy: false };
+export const shared: { client?: DlmsClient; meter?: MeterEntry; busy: boolean; end?: (msg: string) => Promise<void> } = { busy: false };
 
 /** Glue (Web Bluetooth + interval): field-verified, not unit-tested. */
 export function mountLive(root: HTMLElement): void {
@@ -89,6 +89,7 @@ export function mountLive(root: HTMLElement): void {
     status.textContent = msg;
   };
 
+  shared.end = end; // lets other screens drop a possibly desynced session
   stop.onclick = () => void end('Disconnected');
 
   connect.onclick = async () => {
