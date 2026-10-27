@@ -1,0 +1,16 @@
+# secrets / local
+pea_meter_read.zip
+pea_meter_read*/
+.claude/settings.local.json
+.claude/
+*.apk
+Name.txt
+
+# node / build
+node_modules/
+dist/
+dev-dist/
+*.log
+
+# sdd workspace
+.superpowers/
