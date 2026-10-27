@@ -6,6 +6,7 @@ import { parseMeterList, type MeterEntry } from '../store/meterList';
 import { getPassword, listMeters, saveMeters, setPassword } from '../store/db';
 
 const TIMEOUT_MS = 10_000;
+const READ_TIMEOUT_MS = 30_000; // whole readLive batch (6-15 sequential GETs over 20-byte BLE chunks); field test tunes it
 const INTERVAL_MS = 2_000;
 
 /** Pure: value+unit, OBIS and raw per row. A missing reading shows "—", never 0. */
@@ -26,8 +27,12 @@ export function renderReadings(el: HTMLElement, readings: Reading[]): void {
 }
 
 // The DLMS codec is timer-free; the response timeout lives here.
-const withTimeout = <T>(p: Promise<T>, what: string): Promise<T> =>
-  Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what}: no response in ${TIMEOUT_MS / 1000}s`)), TIMEOUT_MS))]);
+async function withTimeout<T>(p: Promise<T>, what: string, ms = TIMEOUT_MS): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([p, new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error(`${what}: no response in ${ms / 1000}s`)), ms); })]);
+  } finally { clearTimeout(t); }
+}
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -58,8 +63,10 @@ export function mountLive(root: HTMLElement): void {
   file.onchange = async () => {
     const f = file.files?.[0];
     if (!f) return;
-    await saveMeters(parseMeterList(await f.text()));
-    await refreshList();
+    try {
+      await saveMeters(parseMeterList(await f.text()));
+      await refreshList();
+    } catch (e) { status.textContent = `Import failed: ${(e as Error).message}`; }
   };
 
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -88,15 +95,15 @@ export function mountLive(root: HTMLElement): void {
     status.textContent = 'Connecting…';
     try {
       const transport = await connectMeter(); // first await after the click keeps the user gesture
-      await setPassword(m.mac, pw.value);
       const client = new DlmsClient(transport, { clientAddr: 32, serverAddr: 1, password: new TextEncoder().encode(pw.value) });
       session = { transport, client };
       await withTimeout(client.associate(), 'associate');
+      await setPassword(m.mac, pw.value); // only a password that worked is persisted
       const tick = async () => {
         if (busy || !session) return;
         busy = true;
         try {
-          renderReadings(out, await withTimeout(readLive(client, m.type), 'read'));
+          renderReadings(out, await withTimeout(readLive(client, m.type), 'read', READ_TIMEOUT_MS));
           status.textContent = `Updated ${new Date().toLocaleTimeString()}`;
         } catch (e) {
           await end(`Error: ${(e as Error).message}`);
@@ -109,5 +116,5 @@ export function mountLive(root: HTMLElement): void {
     }
   };
 
-  void refreshList();
+  refreshList().catch((e) => { status.textContent = `Import failed: ${(e as Error).message}`; });
 }

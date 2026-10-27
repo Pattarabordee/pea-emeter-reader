@@ -10,13 +10,14 @@ describe('renderReadings', () => {
     const el = document.createElement('div');
     renderReadings(el, [r({})]);
     expect(el.textContent).toContain('230.1');
-    expect(el.textContent).toContain('V');
+    expect(el.textContent).toContain('230.1 V');
     expect(el.textContent).toContain('1.0.12.7.0.255');
     expect(el.textContent).toContain('2301');
   });
   it('marks missing as — and never 0', () => {
     const el = document.createElement('div');
     renderReadings(el, [r({ missing: true, value: null, raw: null, obis: '1.0.31.7.0.255' })]);
+    expect(el.querySelector('tr.missing')).not.toBeNull();
     expect(el.textContent).toContain('—');
     expect(el.textContent).toContain('1.0.31.7.0.255');
     expect(el.textContent).not.toMatch(/\b0\b(?!\.)/);
