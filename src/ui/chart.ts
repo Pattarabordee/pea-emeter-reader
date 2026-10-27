@@ -7,7 +7,7 @@ Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryS
 export function chartSeries(rows: Reading[][], keys: (k: string) => boolean): { labels: string[]; series: { key: string; data: (number | null)[] }[] } {
   const labels = rows.map((r) => {
     const c = r.find((x) => x.key === 'clock');
-    return c && !c.missing && c.value !== null ? new Date(c.value).toISOString().slice(0, 16).replace('T', ' ') : '—';
+    return c && !c.missing && Number.isFinite(c.value) ? new Date(c.value as number).toISOString().slice(0, 16).replace('T', ' ') : '—';
   });
   const names = [...new Set(rows.flatMap((r) => r.map((x) => x.key)).filter(keys))];
   return { labels, series: names.map((key) => ({ key, data: rows.map((r) => { const x = r.find((y) => y.key === key); return x && !x.missing ? x.value : null; }) })) };

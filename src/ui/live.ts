@@ -6,7 +6,7 @@ import { parseMeterList, type MeterEntry } from '../store/meterList';
 import { getPassword, listMeters, saveMeters, setPassword } from '../store/db';
 
 const TIMEOUT_MS = 10_000;
-const READ_TIMEOUT_MS = 30_000; // whole readLive batch (6-15 sequential GETs over 20-byte BLE chunks); field test tunes it
+export const READ_TIMEOUT_MS = 30_000; // whole readLive batch (6-15 sequential GETs over 20-byte BLE chunks); field test tunes it
 const INTERVAL_MS = 2_000;
 
 /** Pure: value+unit, OBIS and raw per row. A missing reading shows "—", never 0. */
@@ -27,7 +27,7 @@ export function renderReadings(el: HTMLElement, readings: Reading[]): void {
 }
 
 // The DLMS codec is timer-free; the response timeout lives here.
-async function withTimeout<T>(p: Promise<T>, what: string, ms = TIMEOUT_MS): Promise<T> {
+export async function withTimeout<T>(p: Promise<T>, what: string, ms = TIMEOUT_MS): Promise<T> {
   let t: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([p, new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error(`${what}: no response in ${ms / 1000}s`)), ms); })]);
@@ -74,7 +74,6 @@ export function mountLive(root: HTMLElement): void {
 
   let timer: ReturnType<typeof setInterval> | undefined;
   let session: { transport: BleTransport; client: DlmsClient } | undefined;
-  let busy = false;
 
   const end = async (msg: string) => {
     clearInterval(timer);
@@ -105,14 +104,14 @@ export function mountLive(root: HTMLElement): void {
       shared.client = client; shared.meter = m;
       await setPassword(m.mac, pw.value); // only a password that worked is persisted
       const tick = async () => {
-        if (busy || shared.busy || !session) return;
-        busy = true;
+        if (shared.busy || !session) return;
+        shared.busy = true;
         try {
           renderReadings(out, await withTimeout(readLive(client, m.type), 'read', READ_TIMEOUT_MS));
           status.textContent = `Updated ${new Date().toLocaleTimeString()}`;
         } catch (e) {
           await end(`Error: ${(e as Error).message}`);
-        } finally { busy = false; }
+        } finally { shared.busy = false; }
       };
       await tick();
       if (session) timer = setInterval(() => void tick(), INTERVAL_MS);

@@ -3,7 +3,7 @@ import { decodeRow } from '../profiles/decode';
 import { billingTemplate, eventTemplate, loadTemplate, verifyCapture, type ColumnSpec, type Reading } from '../profiles/templates';
 import { download, toCsv, toJson } from '../export/export';
 import { drawLoadChart } from './chart';
-import { renderReadings, shared } from './live';
+import { READ_TIMEOUT_MS, renderReadings, shared, withTimeout } from './live';
 
 const PAGE_SIZE = 10;
 
@@ -48,13 +48,13 @@ export function mountProfiles(root: HTMLElement): void {
   let total = 0, page = 0;
   let rows: Reading[][] = [];
 
-  const load = async () => {
+  const load = async (t = tab, tot = total, cs = cols, pg = page) => {
     const c = shared.client;
-    if (!c || !tab) return;
-    const { from, count } = pageRange(total, PAGE_SIZE, page);
-    page = Math.floor((from - 1) / PAGE_SIZE);
-    const raw = count > 0 ? await readRowsByEntry(c, tab.obis, from, count) : [];
-    rows = raw.map((r) => decodeRow(r.t === 'structure' ? r.v : [], cols));
+    if (!c || !t) return;
+    const { from, count } = pageRange(tot, PAGE_SIZE, pg);
+    const p = Math.floor((from - 1) / PAGE_SIZE);
+    const raw = count > 0 ? await withTimeout(readRowsByEntry(c, t.obis, from, count), 'read rows', READ_TIMEOUT_MS) : [];
+    rows = raw.map((r) => decodeRow(r.t === 'structure' ? r.v : [], cs));
     out.replaceChildren(...rows.map((r, i) => {
       const d = h('div');
       const b = h('div');
@@ -62,6 +62,8 @@ export function mountProfiles(root: HTMLElement): void {
       d.append(h('h4', `Entry ${from + i}`), b);
       return d;
     }));
+    // commit state only after the reads and decode succeeded
+    tab = t; total = tot; cols = cs; page = p;
     const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     pos.textContent = ` ${tab.label}: page ${page + 1}/${pages} (${total} entries) `;
     first.disabled = prev.disabled = page <= 0;
@@ -81,12 +83,9 @@ export function mountProfiles(root: HTMLElement): void {
   const open = (t: (typeof TABS)[number]) => guarded(async () => {
     const c = shared.client!, m = shared.meter!;
     status.textContent = 'Reading…';
-    tab = t;
-    total = await getEntriesInUse(c, t.obis);
-    const v = verifyCapture(t.tpl(m.type), await getCaptureObjects(c, t.obis));
-    cols = v.columns;
-    page = 0;
-    await load();
+    const tot = await withTimeout(getEntriesInUse(c, t.obis), 'entries', READ_TIMEOUT_MS);
+    const v = verifyCapture(t.tpl(m.type), await withTimeout(getCaptureObjects(c, t.obis), 'capture objects', READ_TIMEOUT_MS));
+    await load(t, tot, v.columns, 0);
     if (!v.ok) status.textContent += " — WARNING: capture layout differs from template; using the meter's live layout";
   });
   const go = (p: number) => guarded(async () => { if (tab) { page = p; await load(); } });
