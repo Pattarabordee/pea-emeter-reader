@@ -37,7 +37,9 @@ describe('HdlcSession', () => {
 
   it('sendInfo splits oversize payload; Ns increments, seg bit on all but last', () => {
     const s = new HdlcSession(32, 1, 4);
-    const frames = s.sendInfo(new Uint8Array(10).map((_, i) => i)).map(decodeHdlc);
+    const payload = new Uint8Array(10).map((_, i) => i);
+    const frames = s.sendInfo(payload).map(decodeHdlc);
+    expect([...frames.flatMap((f) => [...f.info!])]).toEqual([...payload]);
     expect(frames.map((f) => f.control)).toEqual([0x10, 0x12, 0x14]);
     expect(frames.map((f) => f.segmented)).toEqual([true, true, false]);
     expect(frames.map((f) => f.info!.length)).toEqual([4, 4, 2]);
@@ -48,5 +50,18 @@ describe('HdlcSession', () => {
     const s = new HdlcSession(32, 1);
     s.onReceive(fromServer(0x10, [9])); // Ns=0 -> Nr=1
     expect(decodeHdlc(s.sendInfo(new Uint8Array([1]))[0]).control).toBe(0x30); // 1<<5|0x10|Ns0<<1
+  });
+
+  it('meter RR after segmented send -> {kind:rr}, no throw', () => {
+    const s = new HdlcSession(32, 1, 4);
+    s.sendInfo(new Uint8Array(10));
+    expect(s.onReceive(fromServer((1 << 5) | 0x11))).toEqual({ kind: 'rr' });
+  });
+
+  it('unexpected control clears partial reassembly', () => {
+    const s = new HdlcSession(32, 1);
+    s.onReceive(fromServer(0x10, [1, 2], true));
+    expect(() => s.onReceive(fromServer(0x05))).toThrow(); // RNR
+    expect(s.onReceive(fromServer(0x12, [7]))).toEqual({ kind: 'info', apdu: new Uint8Array([7]) });
   });
 });

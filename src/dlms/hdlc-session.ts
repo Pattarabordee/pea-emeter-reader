@@ -3,6 +3,7 @@ import { encodeHdlc, decodeHdlc } from './hdlc';
 // rr is set on needMore: the RR frame the transport must send to request the next segment.
 export type HdlcEvent =
   | { kind: 'ua' }
+  | { kind: 'rr' }
   | { kind: 'info'; apdu: Uint8Array }
   | { kind: 'needMore'; rr: Uint8Array };
 
@@ -51,7 +52,11 @@ export class HdlcSession {
       this.buf = [];
       return { kind: 'ua' };
     }
-    if ((f.control & 1) !== 0) throw new Error(`HDLC: unexpected control 0x${f.control.toString(16)}`);
+    if ((f.control & 0x0f) === 0x01) return { kind: 'rr' }; // meter acks our segment; our Ns is already advanced
+    if ((f.control & 1) !== 0) {
+      this.buf = [];
+      throw new Error(`HDLC: unexpected control 0x${f.control.toString(16)}`);
+    }
     if (((f.control >> 1) & 7) !== this.nr) throw new Error('HDLC: out-of-sequence I-frame');
     this.nr = (this.nr + 1) & 7;
     if (f.info) this.buf.push(f.info);
