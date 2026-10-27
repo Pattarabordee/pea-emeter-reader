@@ -29,6 +29,8 @@ describe('get', () => {
       data: Uint8Array.from([0x06, 0, 0, 0, 7]) });
     expect(parseGetResponse(Uint8Array.from([0xc4, 2, 0xc1, 0, 0, 0, 0, 2, 0, 2, 0xaa, 0xbb]))).toEqual({
       block: { last: false, blockNumber: 2, raw: Uint8Array.from([0xaa, 0xbb]) } });
-    expect(() => parseGetResponse(Uint8Array.from([0xc4, 1, 0xc1, 1, 3]))).toThrow(/result 1/);
+    expect(() => parseGetResponse(Uint8Array.from([0xc4, 1, 0xc1, 0x01, 0x03]))).toThrow(/data-access-result 3 /);
+    expect(() => parseGetResponse(Uint8Array.from([0xc4, 1, 0xc1, 7]))).toThrow(/bad Get-Data-Result tag 7/);
+    expect(() => parseGetResponse(Uint8Array.from([0xc4, 2, 0xc1, 1, 0, 0, 0, 1, 1, 9]))).toThrow(/data-access-result 9 /);
   });
 });

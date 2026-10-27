@@ -37,19 +37,34 @@ export type GetResponse =
   | { data: Uint8Array }
   | { block: { last: boolean; blockNumber: number; raw: Uint8Array } };
 
+const ACCESS_ERR: Record<number, string> = {
+  1: 'hardware-fault', 2: 'temporary-failure', 3: 'read-write-denied', 4: 'object-undefined',
+  9: 'object-class-inconsistent', 11: 'object-unavailable', 12: 'type-unmatched',
+  13: 'scope-of-access-violated', 14: 'data-block-unavailable', 250: 'other-reason',
+};
+
+// Get-Data-Result CHOICE: tag 0 = data follows; tag 1 = data-access-result, whose code is the NEXT byte.
+function checkResult(r: ByteReader): void {
+  const tag = r.u8();
+  if (tag === 0) return;
+  if (tag !== 1) throw new Error(`GET: bad Get-Data-Result tag ${tag}`);
+  const code = r.u8();
+  throw new Error(`GET: data-access-result ${code}${ACCESS_ERR[code] ? ` (${ACCESS_ERR[code]})` : ''}`);
+}
+
 export function parseGetResponse(apdu: Uint8Array): GetResponse {
   const r = new ByteReader(apdu);
   if (r.u8() !== 0xc4) throw new Error('GET: not a get-response');
   const type = r.u8();
   r.u8(); // invoke-id-and-priority
   if (type === 1) {
-    { const res = r.u8(); if (res !== 0) throw new Error(`GET: data-access-result ${res}`); }
+    checkResult(r);
     return { data: r.bytes(r.remaining) };
   }
   if (type === 2) {
     const last = r.u8() !== 0;
     const blockNumber = r.uN(4);
-    { const res = r.u8(); if (res !== 0) throw new Error(`GET: block data-access-result ${res}`); }
+    checkResult(r);
     return { block: { last, blockNumber, raw: r.bytes(r.length()) } };
   }
   throw new Error(`GET: unsupported get-response type ${type}`);
