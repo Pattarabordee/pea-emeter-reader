@@ -1,4 +1,5 @@
 import { mountLive } from './live';
+import { mountProfiles } from './profiles';
 
 export function mountApp(root: HTMLElement): void {
   root.replaceChildren();
@@ -7,4 +8,7 @@ export function mountApp(root: HTMLElement): void {
   const live = document.createElement('section');
   root.append(h1, live);
   mountLive(live);
+  const stored = document.createElement('section');
+  root.append(stored);
+  mountProfiles(stored);
 }

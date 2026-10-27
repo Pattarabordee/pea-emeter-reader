@@ -40,6 +40,9 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElemen
   return e;
 };
 
+/** The one connected link, shared with the stored-data screens. `busy` serialises GETs: the Live poll skips a tick while a profile read runs. */
+export const shared: { client?: DlmsClient; meter?: MeterEntry; busy: boolean } = { busy: false };
+
 /** Glue (Web Bluetooth + interval): field-verified, not unit-tested. */
 export function mountLive(root: HTMLElement): void {
   const picker = h('select');
@@ -78,6 +81,7 @@ export function mountLive(root: HTMLElement): void {
     timer = undefined;
     const s = session;
     session = undefined;
+    shared.client = undefined; shared.meter = undefined;
     if (s) {
       try { await withTimeout(s.client.release(), 'release'); } catch { /* link may already be gone */ }
       s.transport.disconnect();
@@ -98,9 +102,10 @@ export function mountLive(root: HTMLElement): void {
       const client = new DlmsClient(transport, { clientAddr: 32, serverAddr: 1, password: new TextEncoder().encode(pw.value) });
       session = { transport, client };
       await withTimeout(client.associate(), 'associate');
+      shared.client = client; shared.meter = m;
       await setPassword(m.mac, pw.value); // only a password that worked is persisted
       const tick = async () => {
-        if (busy || !session) return;
+        if (busy || shared.busy || !session) return;
         busy = true;
         try {
           renderReadings(out, await withTimeout(readLive(client, m.type), 'read', READ_TIMEOUT_MS));
