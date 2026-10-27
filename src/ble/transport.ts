@@ -1,4 +1,5 @@
 import type { Transport } from '../dlms/client';
+import { recordFrame } from '../debug/capture';
 import { SERVICE_UUIDS } from './uuids';
 
 const FLAG = 0x7e;
@@ -67,7 +68,10 @@ export class BleTransport implements Transport {
     notifyChar.addEventListener('characteristicvaluechanged', (ev) => {
       const dv = (ev.target as BluetoothRemoteGATTCharacteristic).value;
       if (!dv) return;
-      for (const f of this.re.feed(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength))) this.cb(f);
+      for (const f of this.re.feed(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength))) {
+        recordFrame('rx', f); // whole reassembled frame; read-only tee
+        this.cb(f);
+      }
     });
   }
 
@@ -76,6 +80,7 @@ export class BleTransport implements Transport {
   }
 
   async write(b: Uint8Array): Promise<void> {
+    recordFrame('tx', b); // whole frame, before chunking
     const noResp = this.writeChar.properties.writeWithoutResponse;
     const parts = chunk(b, this.chunkSize);
     for (const [i, p] of parts.entries()) {
