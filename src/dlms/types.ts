@@ -9,3 +9,6 @@ export type DlmsData =
   | { t: 'array' | 'structure'; v: DlmsData[] }
   | { t: 'datetime'; v: DlmsDateTime }
   | { t: 'null' };
+
+/** One entry of a ProfileGeneric capture_objects (attr 3): which object/attribute fills a column. */
+export interface CaptureObject { classId: number; obis: string; attributeIndex: number; dataIndex: number }
