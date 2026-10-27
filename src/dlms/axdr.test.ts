@@ -40,6 +40,13 @@ describe('decodeData', () => {
     expect(r.t === 'array' && r.v.length).toBe(130);
   });
 
+  it('long-form length 0x82 and bad length-of-length', () => {
+    const r = dec(0x09, 0x82, 0x01, 0x00, ...new Array(256).fill(7));
+    expect(r.t === 'octet' && r.v.length).toBe(256);
+    expect(() => dec(0x09, 0x80)).toThrow();
+    expect(() => dec(0x09, 0x85, 0, 0, 0, 0, 0)).toThrow();
+  });
+
   it('throws on unknown tag and truncated data', () => {
     expect(() => dec(0x63)).toThrow();
     expect(() => dec(0x12, 0x59)).toThrow();
@@ -52,7 +59,7 @@ describe('datetime (tag 0x19, 12 bytes)', () => {
 
   it('decodes a fully specified timestamp', () => {
     const r = dt(0x07, 0xea, 10, 27, 2, 14, 30, 15, 0, 0x00, 0x00, 0x00);
-    expect(r).toEqual({ t: 'datetime', v: { date: new Date('2026-10-27T14:30:15.000Z'), missing: false } });
+    expect(r).toEqual({ t: 'datetime', v: { date: new Date('2026-10-27T14:30:15.000Z'), missing: false, tzKnown: true } });
   });
 
   it('applies deviation: UTC = local + deviation minutes', () => {
@@ -63,12 +70,21 @@ describe('datetime (tag 0x19, 12 bytes)', () => {
 
   it('deviation 0x8000 (not specified) keeps wall-clock as-is, still valid', () => {
     const r = dt(0x07, 0xea, 10, 27, 0xff, 14, 30, 15, 0xff, 0x80, 0x00, 0xff);
-    expect(r).toEqual({ t: 'datetime', v: { date: new Date('2026-10-27T14:30:15.000Z'), missing: false } });
+    expect(r).toEqual({ t: 'datetime', v: { date: new Date('2026-10-27T14:30:15.000Z'), missing: false, tzKnown: false } });
   });
 
   it('year 0xFFFF -> missing, no date', () => {
     const r = dt(0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x80, 0x00, 0xff);
     expect(r).toEqual({ t: 'datetime', v: { date: null, missing: true } });
+  });
+
+  it('year 0xFFFF alone (all other fields valid) -> missing', () => {
+    expect(dt(0xff, 0xff, 10, 27, 2, 14, 30, 15, 0, 0, 0, 0)).toEqual({ t: 'datetime', v: { date: null, missing: true } });
+  });
+
+  it('year 0 / <2000 -> missing, not a 1900s instant', () => {
+    expect(dt(0, 0, 10, 27, 2, 14, 30, 15, 0, 0, 0, 0)).toEqual({ t: 'datetime', v: { date: null, missing: true } });
+    expect(dt(0x07, 0xcf, 10, 27, 2, 14, 30, 15, 0, 0, 0, 0)).toEqual({ t: 'datetime', v: { date: null, missing: true } });
   });
 
   it('any unspecified month/day/hour/minute -> missing', () => {

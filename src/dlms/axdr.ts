@@ -24,7 +24,10 @@ export class ByteReader {
   /** A-XDR length: <0x80 literal; else low 7 bits = count of following length bytes. */
   length(): number {
     const b = this.u8();
-    return b < 0x80 ? b : this.uN(b & 0x7f);
+    if (b < 0x80) return b;
+    const n = b & 0x7f;
+    if (n < 1 || n > 4) throw new Error(`A-XDR: unsupported length-of-length ${n}`);
+    return this.uN(n);
   }
 }
 
@@ -49,11 +52,12 @@ export function decodeDateTime(r: ByteReader): DlmsDateTime {
   r.u8(); // clock status
   const sec = secRaw === 0xff ? 0 : secRaw;
   const ms = hund === 0xff ? 0 : hund * 10;
-  if (year === 0xffff || month < 1 || month > 12 || hour > 23 || min > 59 || sec > 59 || hund > 99 && hund !== 0xff) return MISSING;
+  if (year < 2000 || // pre-2000 is not a real meter time; Date.UTC would also map 0-99 to 1900s
+    year === 0xffff || month < 1 || month > 12 || hour > 23 || min > 59 || sec > 59 || hund > 99 && hund !== 0xff) return MISSING;
   if (day < 1 || day > DAYS[month - 1] + (month === 2 && isLeap(year) ? 1 : 0)) return MISSING;
   const wall = Date.UTC(year, month - 1, day, hour, min, sec, ms);
   const offsetMin = dev === 0x8000 ? 0 : signed(dev, 16);
-  return { date: new Date(wall + offsetMin * 60000), missing: false };
+  return { date: new Date(wall + offsetMin * 60000), missing: false, tzKnown: dev !== 0x8000 };
 }
 
 export function decodeData(r: ByteReader): DlmsData {
