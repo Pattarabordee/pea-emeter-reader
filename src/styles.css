@@ -1,0 +1,7 @@
+body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; max-width: 40rem; }
+section > * { display: block; margin: .5rem 0; width: 100%; box-sizing: border-box; }
+button, select, input { font-size: 1rem; padding: .5rem; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .25rem .4rem; border-bottom: 1px solid #ddd; font-size: .9rem; }
+tr.missing td { color: #b00; }
+.status { color: #555; }
