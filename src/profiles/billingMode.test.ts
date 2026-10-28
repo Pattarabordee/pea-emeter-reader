@@ -95,4 +95,28 @@ describe('readBillingMode', () => {
     } finally { ap.mockRestore(); sp.mockRestore(); }
     expect(order).toEqual(['pending', 'progress']);
   });
+
+  it('full re-read drops stale pending entries above the new E', async () => {
+    const mac = 'M-stale';
+    const old = (n: number) => row(n).t === 'structure' ? [{ key: 'clock', obis: '0.0.1.0.0.255', raw: n, scaler: 0, unit: '', value: n, missing: false }] : [];
+    await db.appendPending(mac, Array.from({ length: 9 }, (_, i) => old(i + 1)), { from: 1, to: 9 });
+    await db.setProgress(mac, { lastEntry: 9, lastClock: 12345 });
+    const r = await readBillingMode(fake({ [BILLING]: 1, [PQ]: 1, [LOAD]: 4 }).client, mac, 1);
+    expect(r.fullReread).toBe(true);
+    const pend = await db.getPending(mac);
+    expect(pend).toMatchObject({ from: 1, to: 4 });
+    expect(pend?.rows).toHaveLength(4);
+    expect(pend?.rows[0][0].value).toBe(clockAt(1));
+  });
+
+  it('does not advance progress when appendPending rejects', async () => {
+    const mac = 'M-fail';
+    const ap = vi.spyOn(db, 'appendPending').mockRejectedValue(new Error('quota'));
+    const sp = vi.spyOn(db, 'setProgress');
+    try {
+      await expect(readBillingMode(fake({ [BILLING]: 1, [PQ]: 1, [LOAD]: 2 }).client, mac, 1)).rejects.toThrow('quota');
+      expect(sp).not.toHaveBeenCalled();
+    } finally { ap.mockRestore(); sp.mockRestore(); }
+    expect(await db.getProgress(mac)).toBeUndefined();
+  });
 });

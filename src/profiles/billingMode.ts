@@ -1,6 +1,6 @@
 import type { DlmsClient } from '../dlms/client';
 import { getEntriesInUse } from '../dlms/profile';
-import { appendPending, getProgress, setProgress } from '../store/db';
+import { appendPending, clearPending, getProgress, setProgress } from '../store/db';
 import { readRange } from './read';
 import { billingTemplate, eventTemplate, loadTemplate, type ColumnSpec, type Reading } from './templates';
 
@@ -28,6 +28,8 @@ export async function readBillingMode(client: DlmsClient, mac: string, type: 1 |
     else from = p.lastEntry + 1;
   }
   const loadAdded = nothingNew ? [] : await readRange(client, LOAD, cols, from, E);
+  // stale higher-index entries from a pre-reset buffer must not survive the index-merge in appendPending
+  if (fullReread) await clearPending(mac);
   if (loadAdded.length) {
     await appendPending(mac, loadAdded, { from, to: E });
     const lastClock = loadAdded[loadAdded.length - 1][0].value;
