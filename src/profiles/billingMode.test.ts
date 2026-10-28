@@ -5,19 +5,26 @@ import type { DlmsData } from '../dlms/types';
 import type { SelectiveAccess } from '../dlms/get';
 import * as db from '../store/db';
 import { readBillingMode } from './billingMode';
+import { billingTemplate, eventTemplate, loadTemplate } from './templates';
+
+const obisBytes = (o: string): DlmsData => ({ t: 'octet', v: Uint8Array.from(o.split('.').map(Number)) });
+const co = (o: string): DlmsData => ({ t: 'structure', v: [{ t: 'u16', v: 3 }, obisBytes(o), { t: 'u8', v: 2 }, { t: 'u16', v: 0 }] });
+const layout = (obis: string[]) => ({ t: 'array', v: obis.map(co) }) as DlmsData;
+const tplOf = (obis: string) => (obis === BILLING ? billingTemplate(1) : obis === PQ ? eventTemplate(1) : loadTemplate(1));
 
 const BILLING = '1.0.98.1.0.255', LOAD = '1.0.99.1.0.255', PQ = '0.0.99.98.0.255';
 const T0 = Date.UTC(2026, 0, 1);
 const clockAt = (n: number) => T0 + n * 900000;
 const row = (n: number): DlmsData => ({ t: 'structure', v: [{ t: 'datetime', v: { date: new Date(clockAt(n)), missing: false } }] });
 
-function fake(counts: Record<string, number>, clockOf: (n: number) => number = clockAt) {
+function fake(counts: Record<string, number>, clockOf: (n: number) => number = clockAt, capture?: (obis: string) => DlmsData) {
   const calls: Array<{ obis: string; attr: number; access?: SelectiveAccess }> = [];
   const mk = (obis: string, n: number): DlmsData =>
     ({ t: 'structure', v: [{ t: 'datetime', v: { date: new Date(clockOf(n)), missing: false } }] });
   const client = {
     get: async (_c: number, obis: string, attr: number, access?: SelectiveAccess) => {
       calls.push({ obis, attr, access });
+      if (attr === 3) return (capture ?? ((o: string) => layout(tplOf(o).map((c) => c.obis))))(obis);
       if (attr === 7) return { t: 'u32', v: counts[obis] } as DlmsData;
       if (access?.kind !== 'by-entry') throw new Error('unexpected access');
       const rows: DlmsData[] = [];
@@ -83,6 +90,17 @@ describe('readBillingMode', () => {
     const r = await readBillingMode(client, mac, 1);
     expect(r.fullReread).toBe(true);
     expect(loadGets().map((a) => [a.fromEntry, a.toEntry])).toEqual([[1, 4]]);
+  });
+
+  it('layoutWarning false when live layouts match the templates', async () => {
+    const r = await readBillingMode(fake({ [BILLING]: 1, [PQ]: 1, [LOAD]: 1 }).client, 'M-lay-ok', 1);
+    expect(r.layoutWarning).toBe(false);
+  });
+
+  it('layoutWarning true when any live layout differs', async () => {
+    const odd = (o: string) => layout(o === PQ ? ['0.0.1.0.0.255', '9.9.9.9.9.9'] : tplOf(o).map((c) => c.obis));
+    const r = await readBillingMode(fake({ [BILLING]: 1, [PQ]: 1, [LOAD]: 1 }, clockAt, odd).client, 'M-lay-bad', 1);
+    expect(r.layoutWarning).toBe(true);
   });
 
   it('writes progress only after pending resolves', async () => {

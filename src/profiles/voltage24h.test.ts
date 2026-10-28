@@ -46,6 +46,14 @@ describe('read24hVoltage', () => {
     expect(r.rows).toHaveLength(96);
   });
 
+  it.each([0, -5, NaN])('capture_period %s falls back to 900, not the whole buffer', async (bad) => {
+    const { client, calls } = fake({ entries: 200, period: { t: 'u32', v: bad } as DlmsData });
+    const r = await read24hVoltage(client, 1);
+    expect(r.periodSec).toBe(900);
+    const sel = calls.find((c) => c.access)!.access as { fromEntry: number; toEntry: number };
+    expect([sel.fromEntry, sel.toEntry]).toEqual([105, 200]);
+  });
+
   it('returns no rows and no range GET when the profile is empty', async () => {
     const { client, calls } = fake({ entries: 0 });
     expect(await read24hVoltage(client, 1)).toEqual({ rows: [], periodSec: 900 });

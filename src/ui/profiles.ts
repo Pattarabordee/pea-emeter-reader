@@ -41,6 +41,7 @@ export function voltageCsv(rows: Reading[][], meta: Record<string, unknown>): st
   return '﻿' + lines.join('\r\n') + '\r\n';
 }
 
+const LAYOUT_WARN = " — WARNING: capture layout differs from template; using the meter's live layout";
 const MODE_TIMEOUT_MS = READ_TIMEOUT_MS * 10; // a whole mode read is hundreds of sequential GETs, not one batch
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] => {
@@ -129,6 +130,7 @@ export function mountProfiles(root: HTMLElement): void {
     };
     modeExp.hidden = false;
     status.textContent = 'Billing read done';
+    if (r.layoutWarning) status.textContent += LAYOUT_WARN;
   });
   const voltageMode = () => guarded(async () => {
     const c = shared.client!, m = shared.meter!;
@@ -167,7 +169,7 @@ export function mountProfiles(root: HTMLElement): void {
     const tot = await withTimeout(getEntriesInUse(c, t.obis), 'entries', READ_TIMEOUT_MS);
     const v = verifyCapture(t.tpl(m.type), await withTimeout(getCaptureObjects(c, t.obis), 'capture objects', READ_TIMEOUT_MS));
     await load(t, tot, v.columns, 0);
-    if (!v.ok) status.textContent += " — WARNING: capture layout differs from template; using the meter's live layout";
+    if (!v.ok) status.textContent += LAYOUT_WARN;
   });
   const go = (p: number) => guarded(async () => { if (tab) { page = p; await load(); } });
 

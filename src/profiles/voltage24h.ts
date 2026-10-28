@@ -7,7 +7,9 @@ import { loadTemplate, verifyCapture, type Reading } from './templates';
 export async function read24hVoltage(
   client: DlmsClient, type: 1 | 3, obis = '1.0.99.1.0.255',
 ): Promise<{ rows: Reading[][]; periodSec: number }> {
-  const periodSec = await getCapturePeriod(client, obis).catch(() => 900);
+  const got = await getCapturePeriod(client, obis).catch(() => 900);
+  // a meter may answer 0/NaN/negative: ceil(86400/0)=Infinity would read the whole buffer
+  const periodSec = Number.isFinite(got) && got > 0 ? got : 900;
   const cols = verifyCapture(loadTemplate(type), await getCaptureObjects(client, obis)).columns;
   if (!cols.some((c) => c.key.startsWith('voltage'))) throw new Error('no voltage column');
   const E = await getEntriesInUse(client, obis);

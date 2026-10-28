@@ -25,7 +25,7 @@ beforeEach(() => {
 
 describe('fast read modes', () => {
   it('จดบิล shows counts + pending; Export downloads then clears pending', async () => {
-    m.readBillingMode.mockResolvedValue({ billing: [[]], pq: [[], []], loadAdded: [[], [], []], fullReread: false, nothingNew: false });
+    m.readBillingMode.mockResolvedValue({ billing: [[]], pq: [[], []], loadAdded: [[], [], []], fullReread: false, nothingNew: false, layoutWarning: false });
     m.getPending.mockResolvedValue({ rows: [[], [], [], []], from: 1, to: 4 });
     btn(root, 'จดบิล (เร็ว)').click();
     await vi.waitFor(() => expect(root.textContent).toContain('Load added 3'));
@@ -37,6 +37,14 @@ describe('fast read modes', () => {
     await vi.waitFor(() => expect(order).toEqual(['download', 'clear']));
     expect(m.download.mock.calls[0][0]).toMatch(/^AA-BB_billing_\d{4}-\d\d-\d\d\.json$/);
     expect(m.download.mock.calls[0][1]).not.toContain('secret');
+    expect(root.querySelector('.status')!.textContent).not.toContain('WARNING');
+  });
+
+  it('จดบิล shows the layout warning when the live layout differs', async () => {
+    m.readBillingMode.mockResolvedValue({ billing: [], pq: [], loadAdded: [], fullReread: false, nothingNew: true, layoutWarning: true });
+    m.getPending.mockResolvedValue(undefined);
+    btn(root, 'จดบิล (เร็ว)').click();
+    await vi.waitFor(() => expect(root.querySelector('.status')!.textContent).toContain('WARNING: capture layout differs'));
   });
 
   it('แรงดัน 24 ชม. draws rows and exports wide CSV with missing never 0', async () => {
