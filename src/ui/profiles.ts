@@ -149,7 +149,10 @@ export function mountProfiles(root: HTMLElement): void {
   reset.onclick = () => {
     const mac = shared.meter?.mac;
     if (!mac) { status.textContent = 'Connect on the Live screen first'; return; }
-    void Promise.all([clearProgress(mac), clearPending(mac)]).then(() => { status.textContent = 'Progress cleared; next จดบิล read will be full'; });
+    if (shared.busy) { status.textContent = 'Busy… wait for the current read to finish'; return; } // in-flight read may setProgress/appendPending after our clear
+    void Promise.all([clearProgress(mac), clearPending(mac)])
+      .then(() => { status.textContent = 'Progress cleared; next จดบิล read will be full'; })
+      .catch((e) => { status.textContent = `Reset failed (${(e as Error).message})`; });
   };
   modes.append(
     Object.assign(h('button', 'จดบิล (เร็ว)'), { onclick: () => void billingMode() }),

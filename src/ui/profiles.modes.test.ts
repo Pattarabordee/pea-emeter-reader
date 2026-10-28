@@ -64,4 +64,18 @@ describe('fast read modes', () => {
     await vi.waitFor(() => expect(m.clearProgress).toHaveBeenCalledWith('AA:BB'));
     expect(m.clearPending).toHaveBeenCalledWith('AA:BB');
   });
+
+  it('อ่านใหม่ทั้งหมด while busy does nothing and says busy', () => {
+    shared.busy = true;
+    btn(root, 'อ่านใหม่ทั้งหมด').click();
+    expect(m.clearProgress).not.toHaveBeenCalled();
+    expect(m.clearPending).not.toHaveBeenCalled();
+    expect(root.querySelector('.status')!.textContent).toContain('Busy');
+  });
+
+  it('อ่านใหม่ทั้งหมด reports a storage failure in the status', async () => {
+    m.clearProgress.mockRejectedValueOnce(new Error('idb down'));
+    btn(root, 'อ่านใหม่ทั้งหมด').click();
+    await vi.waitFor(() => expect(root.querySelector('.status')!.textContent).toContain('Reset failed (idb down)'));
+  });
 });
