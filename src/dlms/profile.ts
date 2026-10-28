@@ -4,6 +4,7 @@ import type { CaptureObject, DlmsData } from './types';
 const PROFILE_GENERIC = 7;
 const ATTR_BUFFER = 2;
 const ATTR_CAPTURE_OBJECTS = 3;
+const ATTR_CAPTURE_PERIOD = 4;
 const ATTR_ENTRIES_IN_USE = 7;
 
 /** [1,0,98,1,0,255] -> "1.0.98.1.0.255" (inverse of obisToBytes) */
@@ -19,6 +20,11 @@ const num = (d: DlmsData | undefined, what: string): number => {
 
 export async function getEntriesInUse(client: DlmsClient, obis: string): Promise<number> {
   return num(await client.get(PROFILE_GENERIC, obis, ATTR_ENTRIES_IN_USE), 'entries_in_use');
+}
+
+/** capture_period in seconds (attr 4). Throws on DLMS error; caller decides any fallback. */
+export async function getCapturePeriod(client: DlmsClient, obis: string): Promise<number> {
+  return num(await client.get(PROFILE_GENERIC, obis, ATTR_CAPTURE_PERIOD), 'capture_period');
 }
 
 /** fromEntry is 1-based (DLMS entries start at 1). Selected values 0/0 = all columns. */
