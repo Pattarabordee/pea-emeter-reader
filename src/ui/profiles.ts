@@ -2,6 +2,10 @@ import { getCaptureObjects, getEntriesInUse, readRowsByEntry } from '../dlms/pro
 import { decodeRow } from '../profiles/decode';
 import { billingTemplate, eventTemplate, loadTemplate, verifyCapture, type ColumnSpec, type Reading } from '../profiles/templates';
 import { download, toCsv, toJson } from '../export/export';
+import { bangkokIso, exportName } from '../export/format';
+import { readBillingMode } from '../profiles/billingMode';
+import { read24hVoltage } from '../profiles/voltage24h';
+import { clearPending, clearProgress, getPending } from '../store/db';
 import { drawLoadChart } from './chart';
 import { READ_TIMEOUT_MS, renderReadings, shared, withTimeout } from './live';
 
@@ -22,6 +26,23 @@ const TABS = [
   { id: 'event', label: 'PQ Event', obis: '0.0.99.98.0.255', tpl: eventTemplate },
 ] as const;
 
+/** Pure. Wide CSV: meta lines, then `timestamp_bangkok,<voltage keys>`; unreadable cells are 'missing', never 0. */
+export function voltageCsv(rows: Reading[][], meta: Record<string, unknown>): string {
+  const keys: string[] = [];
+  for (const r of rows) for (const x of r) if (x.key.startsWith('voltage') && !keys.includes(x.key)) keys.push(x.key);
+  const num = (x?: Reading) => (x && !x.missing && x.value !== null && Number.isFinite(x.value) ? String(x.value) : 'missing');
+  const lines = Object.entries(meta).map(([k, v]) => `# ${k}: ${JSON.stringify(v)}`);
+  lines.push(['timestamp_bangkok', ...keys].join(','));
+  for (const r of rows) {
+    const c = r.find((x) => x.key === 'clock');
+    const ts = c && !c.missing && c.value !== null && Number.isFinite(c.value) && c.value > 0 ? bangkokIso(c.value) : 'missing';
+    lines.push([ts, ...keys.map((k) => num(r.find((x) => x.key === k)))].join(','));
+  }
+  return '﻿' + lines.join('\r\n') + '\r\n';
+}
+
+const MODE_TIMEOUT_MS = READ_TIMEOUT_MS * 10; // a whole mode read is hundreds of sequential GETs, not one batch
+
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
   e.textContent = text;
@@ -41,7 +62,11 @@ export function mountProfiles(root: HTMLElement): void {
   nav.append(first, prev, pos, next, last);
   const exp = h('div');
   exp.append(csv, json);
-  root.append(h('h2', 'Stored data'), tabs, status, nav, out, canvas, exp);
+  const modes = h('div');
+  const modeOut = h('div');
+  const modeCanvas = h('canvas'); modeCanvas.hidden = true;
+  const modeExp = h('button', 'Export'); modeExp.hidden = true;
+  root.append(h('h2', 'Fast read'), modes, modeOut, modeCanvas, modeExp, h('h2', 'Stored data'), tabs, status, nav, out, canvas, exp);
 
   let tab: (typeof TABS)[number] | undefined;
   let cols: ColumnSpec[] = [];
@@ -83,6 +108,55 @@ export function mountProfiles(root: HTMLElement): void {
       try { await shared.end?.(msg); } finally { status.textContent = msg; }
     } finally { shared.busy = false; }
   };
+
+  // Fast read modes: same guarded() busy/timeout/teardown path as the tabs.
+  let exportFn: (() => Promise<void>) | undefined;
+  const metaOf = () => ({ name: shared.meter?.name ?? '', mac: shared.meter?.mac ?? '', descriptor: shared.meter?.descriptor ?? '' });
+  const billingMode = () => guarded(async () => {
+    const c = shared.client!, m = shared.meter!;
+    status.textContent = 'Reading…'; modeCanvas.hidden = true; modeExp.hidden = true;
+    const r = await withTimeout(readBillingMode(c, m.mac, m.type), 'billing mode', MODE_TIMEOUT_MS);
+    const pend = await getPending(m.mac);
+    modeOut.replaceChildren(
+      h('p', `Billing ${r.billing.length} · PQ ${r.pq.length} · Load added ${r.loadAdded.length}${r.fullReread ? ' (full re-read)' : r.nothingNew ? ' (nothing new)' : ''}`),
+      h('p', `Pending backlog: ${pend ? `${pend.rows.length} rows (entries ${pend.from}–${pend.to})` : 'none'}`),
+    );
+    exportFn = async () => {
+      const p = await getPending(m.mac);
+      download(exportName(m.mac, 'billing') + '.json', toJson({ meta: metaOf(), billing: r.billing, pq: r.pq, loadPending: p?.rows ?? [] }), 'application/json');
+      await clearPending(m.mac); // only after the file was handed off
+      modeOut.append(h('p', 'Exported; pending backlog cleared'));
+    };
+    modeExp.hidden = false;
+    status.textContent = 'Billing read done';
+  });
+  const voltageMode = () => guarded(async () => {
+    const c = shared.client!, m = shared.meter!;
+    status.textContent = 'Reading…'; modeCanvas.hidden = true; modeExp.hidden = true; modeOut.replaceChildren();
+    let v: Awaited<ReturnType<typeof read24hVoltage>>;
+    try { v = await withTimeout(read24hVoltage(c, m.type), '24h voltage', MODE_TIMEOUT_MS); } catch (e) {
+      if ((e as Error).message === 'no voltage column') { status.textContent = 'no voltage column'; return; } // clean refusal; link still in sync
+      throw e;
+    }
+    modeOut.replaceChildren(h('p', `${v.rows.length} rows, period ${v.periodSec}s`));
+    modeCanvas.hidden = v.rows.length === 0;
+    if (!modeCanvas.hidden) drawLoadChart(modeCanvas, v.rows);
+    exportFn = async () => download(exportName(m.mac, 'voltage24h') + '.csv', voltageCsv(v.rows, { ...metaOf(), periodSec: v.periodSec }), 'text/csv;charset=utf-8');
+    modeExp.hidden = v.rows.length === 0;
+    status.textContent = 'Voltage read done';
+  });
+  const reset = h('button', 'อ่านใหม่ทั้งหมด');
+  reset.onclick = () => {
+    const mac = shared.meter?.mac;
+    if (!mac) { status.textContent = 'Connect on the Live screen first'; return; }
+    void Promise.all([clearProgress(mac), clearPending(mac)]).then(() => { status.textContent = 'Progress cleared; next จดบิล read will be full'; });
+  };
+  modes.append(
+    Object.assign(h('button', 'จดบิล (เร็ว)'), { onclick: () => void billingMode() }),
+    Object.assign(h('button', 'แรงดัน 24 ชม.'), { onclick: () => void voltageMode() }),
+    reset,
+  );
+  modeExp.onclick = () => { if (exportFn) void exportFn().catch((e) => { status.textContent = `Export failed (${(e as Error).message})`; }); };
 
   const open = (t: (typeof TABS)[number]) => guarded(async () => {
     const c = shared.client!, m = shared.meter!;

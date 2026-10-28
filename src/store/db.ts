@@ -31,6 +31,10 @@ export async function setProgress(mac: string, p: Progress): Promise<void> {
   await (await db()).put('loadProgress', p, mac);
 }
 
+export async function clearProgress(mac: string): Promise<void> {
+  await (await db()).delete('loadProgress', mac);
+}
+
 export async function appendPending(mac: string, rows: Reading[][], meta: { from: number; to: number }): Promise<void> {
   const tx = (await db()).transaction('pending', 'readwrite');
   const cur: PendingRec | undefined = await tx.store.get(mac);
