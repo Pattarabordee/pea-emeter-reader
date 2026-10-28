@@ -14,3 +14,5 @@ dev-dist/
 
 # sdd workspace
 .superpowers/
+docs/
+PEA_METER_KNOWLEDGE_PROMPT.md
