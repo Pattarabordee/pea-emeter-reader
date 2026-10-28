@@ -35,7 +35,7 @@ describe('fast read modes', () => {
     m.clearPending.mockImplementation(async () => { order.push('clear'); });
     btn(root, 'Export').click();
     await vi.waitFor(() => expect(order).toEqual(['download', 'clear']));
-    expect(m.download.mock.calls[0][0]).toMatch(/billing\.json$/);
+    expect(m.download.mock.calls[0][0]).toMatch(/^AA-BB_billing_\d{4}-\d\d-\d\d\.json$/);
     expect(m.download.mock.calls[0][1]).not.toContain('secret');
   });
 
