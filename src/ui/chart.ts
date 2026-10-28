@@ -1,5 +1,6 @@
 import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Legend, Tooltip } from 'chart.js';
 import type { Reading } from '../profiles/templates';
+import { bangkokIso } from '../export/format';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Legend, Tooltip);
 
@@ -7,7 +8,7 @@ Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryS
 export function chartSeries(rows: Reading[][], keys: (k: string) => boolean): { labels: string[]; series: { key: string; data: (number | null)[] }[] } {
   const labels = rows.map((r) => {
     const c = r.find((x) => x.key === 'clock');
-    return c && !c.missing && Number.isFinite(c.value) ? new Date(c.value as number).toISOString().slice(0, 16).replace('T', ' ') : '—';
+    return c && !c.missing && Number.isFinite(c.value) ? bangkokIso(c.value as number).slice(0, 16).replace('T', ' ') + '+07:00' : '—';
   });
   const names = [...new Set(rows.flatMap((r) => r.map((x) => x.key)).filter(keys))];
   return { labels, series: names.map((key) => ({ key, data: rows.map((r) => { const x = r.find((y) => y.key === key); return x && !x.missing ? x.value : null; }) })) };
