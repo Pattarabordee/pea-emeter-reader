@@ -1,9 +1,12 @@
 // ACSE association (IEC 62056-46 / DLMS Green Book): LN referencing, no ciphering, LLS.
 const LN_CONTEXT = [0x60, 0x85, 0x74, 0x05, 0x08, 0x01, 0x01]; // 2.16.756.5.8.1.1
 const LLS_MECH = [0x60, 0x85, 0x74, 0x05, 0x08, 0x02, 0x01]; // 2.16.756.5.8.2.1
-// InitiateRequest: no dedicated-key, no response-allowed, no quality, DLMS v6,
-// conformance (get|set|selective-access|action|block-transfer|multiple-refs|event-notif) 00 7E 1F, max PDU 0xFFFF.
-const INITIATE_REQUEST = [0x01, 0x00, 0x00, 0x00, 0x06, 0x5f, 0x1f, 0x04, 0x00, 0x00, 0x7e, 0x1f, 0xff, 0xff];
+// InitiateRequest: no dedicated-key, no response-allowed, no quality, DLMS v6, then conformance and max PDU.
+export type InitiateParams = { conformance: number; maxPdu: number };
+// Default: conformance (get|set|selective-access|action|block-transfer|multiple-refs|event-notif) 00 7E 1F, max PDU 0xFFFF.
+export const DEFAULT_INITIATE: InitiateParams = { conformance: 0x007e1f, maxPdu: 0xffff };
+const initiateRequest = ({ conformance: c, maxPdu: m }: InitiateParams) =>
+  [0x01, 0x00, 0x00, 0x00, 0x06, 0x5f, 0x1f, 0x04, 0x00, (c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff, (m >> 8) & 0xff, m & 0xff];
 
 function ber(len: number): number[] {
   if (len < 0x80) return [len];
@@ -11,13 +14,13 @@ function ber(len: number): number[] {
 }
 const tlv = (tag: number, body: ArrayLike<number>): number[] => [tag, ...ber(body.length), ...Array.from(body)];
 
-export function buildAarq(password: Uint8Array): Uint8Array {
+export function buildAarq(password: Uint8Array, initiate: InitiateParams = DEFAULT_INITIATE): Uint8Array {
   const body = [
     ...tlv(0xa1, tlv(0x06, LN_CONTEXT)),
     0x8a, 0x02, 0x07, 0x80, // sender-acse-requirements: authentication
     ...tlv(0x8b, LLS_MECH),
     ...tlv(0xac, tlv(0x80, password)),
-    ...tlv(0xbe, tlv(0x04, INITIATE_REQUEST)),
+    ...tlv(0xbe, tlv(0x04, initiateRequest(initiate))),
   ];
   return Uint8Array.from(tlv(0x60, body));
 }
@@ -46,6 +49,25 @@ const PROVIDER_DIAG: Record<number, string> = {
   0: 'null', 1: 'no-reason-given', 2: 'no-common-acse-version',
 };
 const RESULT: Record<number, string> = { 0: 'accepted', 1: 'rejected-permanent', 2: 'rejected-transient' };
+// xDLMS ConfirmedServiceError (Green Book): 0x0E <service> <ServiceError choice> <value>.
+const CSE_SERVICE: Record<number, string> = { 1: 'initiate', 2: 'get-status', 3: 'get-name-list', 5: 'read', 6: 'write' };
+const SERVICE_ERROR: Record<number, [string, Record<number, string>]> = {
+  0: ['application-reference', { 0: 'other', 1: 'time-elapsed', 2: 'application-unreachable', 3: 'application-reference-invalid', 4: 'application-context-unsupported', 5: 'provider-communication-error', 6: 'deciphering-error' }],
+  1: ['hardware-resource', { 0: 'other', 1: 'memory-unavailable', 2: 'processor-resource-unavailable', 3: 'mass-storage-unavailable', 4: 'other-resource-unavailable' }],
+  2: ['vde-state-error', { 0: 'other', 1: 'no-dlms-context', 2: 'loading-data-set', 3: 'status-nochange', 4: 'status-inoperable' }],
+  3: ['service', { 0: 'other', 1: 'pdu-size', 2: 'service-unsupported' }],
+  4: ['definition', { 0: 'other', 1: 'object-undefined', 2: 'object-class-inconsistent', 3: 'object-attribute-inconsistent' }],
+  5: ['access', { 0: 'other', 1: 'scope-of-access-violated', 2: 'object-access-violated', 3: 'hardware-fault', 4: 'object-unavailable' }],
+  6: ['initiate', { 0: 'other', 1: 'dlms-version-too-low', 2: 'incompatible-conformance', 3: 'pdu-size-too-short', 4: 'refused-by-the-VDE-handler' }],
+};
+
+function confirmedServiceError(b: Uint8Array, i: number): string {
+  const svc = CSE_SERVICE[b[i + 1]] ?? `service-${b[i + 1]}`;
+  const se = SERVICE_ERROR[b[i + 2]];
+  const val = b[i + 3];
+  if (!se || val === undefined) return `confirmed-service-error ${svc}`;
+  return `confirmed-service-error ${svc}: ${se[0]}/${se[1][val] ?? val}`;
+}
 
 export function parseAare(apdu: Uint8Array): { accepted: boolean; diagnostic: string } {
   let result = -1;
@@ -64,7 +86,7 @@ export function parseAare(apdu: Uint8Array): { accepted: boolean; diagnostic: st
       } else if (t === 0xbe && ve - vs >= 4) {
         // [30] { OCTET STRING { xDLMS APDU } }: 0x08 InitiateResponse, 0x0E ConfirmedServiceError
         const x = apdu[vs + 2];
-        if (x === 0x0e) userInfo = 'confirmed-service-error';
+        if (x === 0x0e) userInfo = confirmedServiceError(apdu, vs + 2);
       }
       p = ve;
     }

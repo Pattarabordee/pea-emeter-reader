@@ -27,6 +27,14 @@ describe('acse', () => {
     expect(r.diagnostic).toContain('authentication-failure');
   });
 
+  it('decodes the ConfirmedServiceError a meter sends when it refuses the InitiateRequest', () => {
+    // result rejected-permanent, user diag no-reason-given, user-information 0E 01 06 02 = initiate / incompatible-conformance
+    const aare = fromHex('611fa109060760857405080101a203020101a305a103020101be0604040e010602');
+    expect(parseAare(aare).diagnostic).toBe(
+      'rejected-permanent: no-reason-given (confirmed-service-error initiate: initiate/incompatible-conformance)',
+    );
+  });
+
   it('maps application-context-name-not-supported and garbage', () => {
     const aare = fromHex('6117a109060760857405080101a203020101a305a103020102');
     expect(parseAare(aare).diagnostic).toContain('application-context-name-not-supported');
