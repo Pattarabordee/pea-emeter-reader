@@ -45,6 +45,20 @@ const num = (d: DlmsData): number => {
   throw new Error('non-numeric register value');
 };
 
+const scale = (raw: number, scaler: number) => (scaler < 0 ? raw / 10 ** -scaler : raw * 10 ** scaler);
+// The PEA BLE-iMeter app divides voltage by 100 whatever the meter says. A GUNKUL meter (6600433046, 2026-11-08)
+// declared scaler -1 for raw 23437, i.e. 2343.7 V. So voltage uses -2 first, and falls back to the meter's own
+// scaler only when -2 gives an impossible LV voltage and the meter's scaler gives a sensible one.
+const PEA_VOLTAGE_SCALER = -2;
+const isVoltage = (key: string) => key.startsWith('voltage');
+const plausibleVolts = (v: number) => v >= 50 && v <= 500;
+
+function pickScaler(key: string, raw: number, meterScaler: number): number {
+  if (!isVoltage(key) || meterScaler === PEA_VOLTAGE_SCALER) return meterScaler;
+  if (plausibleVolts(scale(raw, PEA_VOLTAGE_SCALER)) || !plausibleVolts(scale(raw, meterScaler))) return PEA_VOLTAGE_SCALER;
+  return meterScaler;
+}
+
 export async function readLive(client: DlmsClient, type: 1 | 3): Promise<Reading[]> {
   const out: Reading[] = [];
   for (const s of LIVE_REGISTERS(type)) {
@@ -52,8 +66,8 @@ export async function readLive(client: DlmsClient, type: 1 | 3): Promise<Reading
     try {
       const su = await scalerUnit(client, s);
       const raw = num(await client.get(3, s.obis, 2));
-      const value = su.scaler < 0 ? raw / 10 ** -su.scaler : raw * 10 ** su.scaler;
-      out.push({ ...base, ...su, raw, value, missing: false });
+      const scaler = pickScaler(s.key, raw, su.scaler);
+      out.push({ ...base, unit: su.unit, scaler, raw, value: scale(raw, scaler), missing: false });
     } catch {
       out.push({ ...base, raw: null, value: null, missing: true });
     }
