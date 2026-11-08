@@ -50,6 +50,21 @@ describe.each([[true], [false]])('DlmsClient (sync delivery=%s)', (sync) => {
     expect([...decodeHdlc(writes[3]).info!.subarray(3)]).toEqual([0xc0, 2, 0xc1, 0, 0, 0, 1]);
   });
 
+  it('retries the AARQ with alternative InitiateRequest settings when only the initiate part is refused', async () => {
+    const refusedInitiate = hexb('611fa109060760857405080101a203020101a305a103020101be0604040e010600');
+    const { t, writes } = fakeMeter(['UA', info(refusedInitiate), info(AARE_OK)], sync);
+    const alt = { conformance: 0x001e1d, maxPdu: 0x0400 };
+    await expect(new DlmsClient(t, opts).associate([alt])).resolves.toEqual(alt);
+    const hexWrites = writes.map((w) => Array.from(w, (x) => x.toString(16).padStart(2, '0')).join(''));
+    expect(hexWrites.some((h) => h.includes('5f1f0400001e1d0400'))).toBe(true); // second AARQ carries the alternative
+  });
+
+  it('does not retry when the password is refused', async () => {
+    const rej = hexb('6117a109060760857405080101a203020101a305a10302010d');
+    const { t } = fakeMeter(['UA', info(rej), info(AARE_OK)], sync);
+    await expect(new DlmsClient(t, opts).associate([{ conformance: 0x001e1d, maxPdu: 0x0400 }])).rejects.toThrow(/authentication-failure/);
+  });
+
   it('throws when the AARE is rejected', async () => {
     const rej = hexb('6117a109060760857405080101a203020101a305a10302010d');
     const { t } = fakeMeter(['UA', info(rej)], sync);

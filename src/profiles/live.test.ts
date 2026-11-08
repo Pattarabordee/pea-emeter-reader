@@ -38,6 +38,21 @@ describe('readLive', () => {
     expect(r.value).toBeCloseTo(230.15, 10);
   });
 
+  it('voltage follows the PEA app (x0.01) when the meter declares the wrong scaler', async () => {
+    // Field read, GUNKUL 6600433046: raw 23437 with declared scaler -1 would be 2343.7 V.
+    const { client } = fake({ '1.0.12.7.0.255': { value: { t: 'u16', v: 23437 }, su: su(-1, 35) } });
+    const r = (await readLive(client, 1))[0];
+    expect(r).toMatchObject({ raw: 23437, scaler: -2, unit: 'V' });
+    expect(r.value).toBeCloseTo(234.37, 10);
+  });
+
+  it("voltage keeps the meter's scaler when x0.01 would be impossible but its own gives a real voltage", async () => {
+    const { client } = fake({ '1.0.12.7.0.255': { value: { t: 'u16', v: 2301 }, su: su(-1, 35) } });
+    const r = (await readLive(client, 1))[0];
+    expect(r).toMatchObject({ raw: 2301, scaler: -1 });
+    expect(r.value).toBeCloseTo(230.1, 10);
+  });
+
   it('errored register is missing (not 0) and the others still read', async () => {
     const { client } = fake({ '1.0.12.7.0.255': { fail: true }, '1.0.31.7.0.255': { value: { t: 'u32', v: 1500 }, su: su(-3, 33) } });
     const rs = await readLive(client, 1);

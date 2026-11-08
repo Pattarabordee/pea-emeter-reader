@@ -1,5 +1,5 @@
 import { HdlcSession, type HdlcEvent } from './hdlc-session';
-import { buildAarq, parseAare } from './acse';
+import { buildAarq, DEFAULT_INITIATE, parseAare, type InitiateParams } from './acse';
 import { ByteReader, decodeData } from './axdr';
 import { buildGetNormal, buildGetNext, parseGetResponse, type SelectiveAccess } from './get';
 import { obisToBytes } from './obis';
@@ -67,11 +67,19 @@ export class DlmsClient {
     return resp.subarray(3);
   }
 
-  async associate(): Promise<void> {
+  /** SNRM/UA, then AARQ. If the meter refuses only the xDLMS InitiateRequest (not the password),
+   *  retry on the same link with each of `alternatives` in turn. Returns the parameters it accepted. */
+  async associate(alternatives: InitiateParams[] = []): Promise<InitiateParams> {
     await this.t.write(this.session.snrm());
     await this.expect('ua');
-    const aare = parseAare(await this.request(buildAarq(this.o.password)));
-    if (!aare.accepted) throw new Error(`AARE rejected: ${aare.diagnostic}`);
+    const tried: string[] = [];
+    for (const p of [DEFAULT_INITIATE, ...alternatives]) {
+      const aare = parseAare(await this.request(buildAarq(this.o.password, p)));
+      if (aare.accepted) return p;
+      tried.push(aare.diagnostic);
+      if (!aare.diagnostic.includes('confirmed-service-error initiate')) break; // e.g. wrong password: don't retry
+    }
+    throw new Error(`AARE rejected: ${tried.join(' | ')}`);
   }
 
   async get(classId: number, obis: string, attr: number, access?: SelectiveAccess): Promise<DlmsData> {
