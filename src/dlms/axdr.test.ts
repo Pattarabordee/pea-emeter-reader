@@ -47,6 +47,16 @@ describe('decodeData', () => {
     expect(() => dec(0x09, 0x85, 0, 0, 0, 0, 0)).toThrow();
   });
 
+  it('decodes the extra tags found in object lists and event logs', () => {
+    expect(dec(0x03, 0x01)).toEqual({ t: 'u8', v: 1 }); // boolean
+    expect(dec(0x04, 0x0a, 0xff, 0xc0)).toEqual({ t: 'octet', v: Uint8Array.from([0xff, 0xc0]) }); // 10-bit bit-string
+    expect(dec(0x0a, 0x02, 0x41, 0x42)).toEqual({ t: 'octet', v: Uint8Array.from([0x41, 0x42]) }); // visible-string "AB"
+    expect(dec(0x14, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe)).toEqual({ t: 'i64', v: -2 });
+    expect(dec(0x15, 0, 0, 0, 1, 0, 0, 0, 0)).toEqual({ t: 'u64', v: 2 ** 32 });
+    expect(dec(0x17, 0x3f, 0xc0, 0, 0)).toEqual({ t: 'f32', v: 1.5 });
+    expect(dec(0x1a, 0x07, 0xea, 0x0b, 0x08, 0xff)).toEqual({ t: 'octet', v: Uint8Array.from([0x07, 0xea, 0x0b, 0x08, 0xff]) });
+  });
+
   it('throws on unknown tag and truncated data', () => {
     expect(() => dec(0x63)).toThrow();
     expect(() => dec(0x12, 0x59)).toThrow();

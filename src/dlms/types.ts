@@ -3,7 +3,7 @@
 export type DlmsDateTime = { date: Date | null; missing: boolean; tzKnown?: boolean };
 
 export type DlmsData =
-  | { t: 'u8' | 'u16' | 'u32' | 'i8' | 'i16' | 'i32'; v: number }
+  | { t: 'u8' | 'u16' | 'u32' | 'i8' | 'i16' | 'i32' | 'i64' | 'u64' | 'f32' | 'f64'; v: number }
   | { t: 'octet'; v: Uint8Array }
   | { t: 'enum'; v: number }
   | { t: 'array' | 'structure'; v: DlmsData[] }
