@@ -59,6 +59,22 @@ function pickScaler(key: string, raw: number, meterScaler: number): number {
   return meterScaler;
 }
 
+// The same GUNKUL family also declares current one decade too coarse: 6600433732 (2026-11-09) gave current raw 873
+// with scaler -2 (8.73 A) next to 229.51 V, 202.93 VA and 116.97 W; V x I x PF only matches P at 0.873 A.
+// So when voltage and apparent power are both read, pick the current decade that best fits I = S / V.
+function crossCheckCurrent(out: Reading[]): void {
+  const v = out.find((r) => r.key === 'voltage' && !r.missing)?.value;
+  const s = out.find((r) => r.key === 'apparentPower' && !r.missing)?.value;
+  const i = out.find((r) => r.key === 'current' && !r.missing);
+  if (!v || !s || !i || i.raw == null || i.raw === 0 || v < 50 || s < 5) return; // too little load to judge
+  const raw = i.raw;
+  const want = s / v;
+  const best = [i.scaler, i.scaler - 1, i.scaler + 1]
+    .map((sc) => ({ sc, err: Math.abs(Math.log10(scale(raw, sc) / want)) }))
+    .sort((a, b) => a.err - b.err)[0];
+  if (best.sc !== i.scaler && best.err < 0.3) { i.scaler = best.sc; i.value = scale(raw, best.sc); }
+}
+
 export async function readLive(client: DlmsClient, type: 1 | 3): Promise<Reading[]> {
   const out: Reading[] = [];
   for (const s of LIVE_REGISTERS(type)) {
@@ -72,5 +88,6 @@ export async function readLive(client: DlmsClient, type: 1 | 3): Promise<Reading
       out.push({ ...base, raw: null, value: null, missing: true });
     }
   }
+  crossCheckCurrent(out);
   return out;
 }
