@@ -53,6 +53,28 @@ describe('readLive', () => {
     expect(r.value).toBeCloseTo(230.1, 10);
   });
 
+  it('corrects a current scaler that is one decade off, using V and VA (field read 6600433732)', async () => {
+    const { client } = fake({
+      '1.0.12.7.0.255': { value: { t: 'u16', v: 22951 }, su: su(-2, 35) },
+      '1.0.31.7.0.255': { value: { t: 'u32', v: 873 }, su: su(-2, 33) }, // meter says 8.73 A
+      '1.0.9.7.0.255': { value: { t: 'u32', v: 20293 }, su: su(-2, 28) }, // 202.93 VA
+    });
+    const rs = await readLive(client, 1);
+    const i = rs.find((r) => r.key === 'current')!;
+    expect(i).toMatchObject({ raw: 873, scaler: -3 });
+    expect(i.value).toBeCloseTo(0.873, 10);
+  });
+
+  it('leaves a current that already fits V and VA alone', async () => {
+    const { client } = fake({
+      '1.0.12.7.0.255': { value: { t: 'u16', v: 23000 }, su: su(-2, 35) },
+      '1.0.31.7.0.255': { value: { t: 'u32', v: 500 }, su: su(-2, 33) }, // 5.00 A
+      '1.0.9.7.0.255': { value: { t: 'u32', v: 115000 }, su: su(-2, 28) }, // 1150 VA
+    });
+    const i = (await readLive(client, 1)).find((r) => r.key === 'current')!;
+    expect(i).toMatchObject({ scaler: -2, value: 5 });
+  });
+
   it('errored register is missing (not 0) and the others still read', async () => {
     const { client } = fake({ '1.0.12.7.0.255': { fail: true }, '1.0.31.7.0.255': { value: { t: 'u32', v: 1500 }, su: su(-3, 33) } });
     const rs = await readLive(client, 1);

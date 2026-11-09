@@ -79,6 +79,20 @@ export function decodeData(r: ByteReader): DlmsData {
     case 0x12: return { t: 'u16', v: r.uN(2) };
     case 0x16: return { t: 'enum', v: r.u8() };
     case 0x19: return { t: 'datetime', v: decodeDateTime(r) };
+    // Seen in object lists and event logs: kept as plain numbers or bytes rather than new shapes.
+    case 0x03: return { t: 'u8', v: r.u8() ? 1 : 0 }; // boolean
+    case 0x04: return { t: 'octet', v: r.bytes(Math.ceil(r.length() / 8)).slice() }; // bit-string (length in bits)
+    case 0x0a: case 0x0c: return { t: 'octet', v: r.bytes(r.length()).slice() }; // visible-string, utf8-string
+    case 0x0d: return { t: 'u8', v: r.u8() }; // bcd
+    case 0x14: case 0x15: {
+      const b = r.bytes(8);
+      const big = new DataView(b.buffer, b.byteOffset, 8);
+      return tag === 0x14 ? { t: 'i64', v: Number(big.getBigInt64(0)) } : { t: 'u64', v: Number(big.getBigUint64(0)) };
+    }
+    case 0x17: { const b = r.bytes(4); return { t: 'f32', v: new DataView(b.buffer, b.byteOffset, 4).getFloat32(0) }; }
+    case 0x18: { const b = r.bytes(8); return { t: 'f64', v: new DataView(b.buffer, b.byteOffset, 8).getFloat64(0) }; }
+    case 0x1a: return { t: 'octet', v: r.bytes(5).slice() }; // date
+    case 0x1b: return { t: 'octet', v: r.bytes(4).slice() }; // time
     default: throw new Error(`A-XDR: unsupported data tag 0x${tag.toString(16)}`);
   }
 }
