@@ -5,6 +5,7 @@ import type { Reading } from '../profiles/templates';
 import { parseMeterList, type MeterEntry } from '../store/meterList';
 import { getPassword, listMeters, saveMeters, setPassword } from '../store/db';
 import { normMac } from '../store/places';
+import { readPicked } from './readFile';
 
 const TIMEOUT_MS = 10_000;
 export const READ_TIMEOUT_MS = 30_000; // whole readLive batch (6-15 sequential GETs over 20-byte BLE chunks); field test tunes it
@@ -71,7 +72,7 @@ export function mountLive(root: HTMLElement): void {
     const f = file.files?.[0];
     if (!f) return;
     try {
-      await saveMeters(parseMeterList(await f.text()));
+      await saveMeters(parseMeterList(await readPicked(f)));
       await refreshList();
     } catch (e) { status.textContent = `Import failed: ${(e as Error).message}`; }
   };

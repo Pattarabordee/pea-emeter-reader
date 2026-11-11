@@ -2,6 +2,7 @@ import type * as Leaflet from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { distanceM, parsePlaces, type Place } from '../store/places';
 import { listPlaces, savePlaces } from '../store/db';
+import { readPicked } from './readFile';
 
 const NEAR_LIST = 10; // nearest meters listed under the map
 const NEAR_M = 300; // drawn bigger/green when this close
@@ -73,12 +74,13 @@ export function mountMap(root: HTMLElement, onPick: (p: Place) => string): () =>
   file.onchange = async () => {
     const f = file.files?.[0];
     if (!f) return;
+    let list: Place[];
+    try { list = parsePlaces(await readPicked(f)); } catch (e) { status.textContent = `โหลดไฟล์ไม่ได้: ${(e as Error).message}`; return; }
+    show(list); // usable now even if saving fails
     try {
-      const list = parsePlaces(await f.text());
       await savePlaces(list);
       status.textContent = `โหลดพิกัด ${list.length} มิเตอร์แล้ว`;
-      show(list);
-    } catch (e) { status.textContent = `โหลดไฟล์ไม่ได้: ${(e as Error).message}`; }
+    } catch (e) { status.textContent = `แสดง ${list.length} มิเตอร์แล้ว แต่บันทึกลงเครื่องไม่ได้ (${(e as Error).message}) ครั้งหน้าต้องเลือกไฟล์ใหม่`; }
   };
 
   const start = async () => {
