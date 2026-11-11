@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
-import { getPassword, listMeters, saveMeters, setPassword } from './db';
+import { deleteRead, getPassword, listMeters, listReads, saveMeters, saveRead, setPassword } from './db';
 
 const m = { name: 'A B', mac: 'AA:BB:CC:DD:EE:FF', password: '00000000', type: 1 as const, descriptor: 'd' };
 
@@ -14,6 +14,14 @@ describe('db', () => {
     expect(await getPassword('00:00:00:00:00:00')).toBeUndefined();
     await setPassword(m.mac, 'fake-override');
     expect(await getPassword(m.mac)).toBe('fake-override');
+  });
+  it('saves, lists newest first, and deletes history reads', async () => {
+    const p = { kind: 'event' as const, obis: '0.0.99.98.0.255', periodSec: 0, entries: 1, columns: [], rows: [[1, 202]] };
+    const a = await saveRead({ at: 1, mac: m.mac, name: 'A', profile: p });
+    const b = await saveRead({ at: 2, mac: m.mac, name: 'B', profile: p });
+    expect((await listReads()).map((r) => r.name)).toEqual(['B', 'A']);
+    await deleteRead(a);
+    expect((await listReads()).map((r) => r.id)).toEqual([b]);
   });
   it('import password is the default when no override', async () => {
     await saveMeters([{ ...m, mac: '11:11:11:11:11:11', password: 'imp' }]);

@@ -2,6 +2,7 @@ import { clearFrames, exportFrames, frameCount, setCaptureEnabled } from '../deb
 import { download } from '../export/export';
 import { mountLive } from './live';
 import { mountProfiles } from './profiles';
+import { mountHistory } from './history';
 
 export function mountApp(root: HTMLElement): void {
   root.replaceChildren();
@@ -18,20 +19,22 @@ export function mountApp(root: HTMLElement): void {
   const nav = document.createElement('nav');
   const live = document.createElement('section');
   const stored = document.createElement('section');
-  root.append(nav, live, stored);
-  // Without navigator.bluetooth the Connect UI is not mounted; the rest of the shell still loads.
+  const hist = document.createElement('section');
+  root.append(nav, live, hist, stored);
+  // Without navigator.bluetooth the Connect UI is not mounted; the rest of the shell (incl. saved reads) still loads.
   if (hasBt) mountLive(live);
+  mountHistory(hist);
   mountProfiles(stored);
-  const show = (isLive: boolean) => { live.hidden = !isLive; stored.hidden = isLive; };
+  const show = (s: HTMLElement) => { for (const x of [live, hist, stored]) x.hidden = x !== s; };
   // Billing/Load/PQ click the profile tab buttons mountProfiles renders (first div of the section), in that order.
   const profileBtns = () => stored.querySelectorAll<HTMLButtonElement>('div > button');
-  ['Live', 'Billing', 'Load', 'PQ'].forEach((label, i) => {
+  ['Live', 'ย้อนหลัง / SAP', 'Billing', 'Load', 'PQ'].forEach((label, i) => {
     const b = document.createElement('button');
     b.textContent = label;
-    b.addEventListener('click', () => { show(i === 0); if (i) profileBtns()[i - 1]?.click(); });
+    b.addEventListener('click', () => { show(i === 0 ? live : i === 1 ? hist : stored); if (i > 1) profileBtns()[i - 2]?.click(); });
     nav.append(b);
   });
-  show(true);
+  show(live);
   const dbg = document.createElement('section');
   const label = document.createElement('label');
   const cb = document.createElement('input');

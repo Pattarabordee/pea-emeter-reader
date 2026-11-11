@@ -1,12 +1,14 @@
 import { openDB } from 'idb';
 import type { Reading } from '../profiles/templates';
+import type { ProfileData } from '../profiles/history';
 import type { MeterEntry } from './meterList';
 
 // DB "emeter": store `meters` (key mac; includes the imported password) and
 // store `passwords` (key mac -> user override). getPassword prefers the override.
 // v2 adds `loadProgress` (mac -> Progress) and `pending` (mac -> PendingRec).
+// v3 adds `history` (auto id -> SavedRead): every history read, kept so nothing read in the field is lost.
 const db = () =>
-  openDB('emeter', 2, {
+  openDB('emeter', 3, {
     upgrade(d, oldVersion) {
       if (oldVersion < 1) {
         d.createObjectStore('meters', { keyPath: 'mac' });
@@ -16,8 +18,24 @@ const db = () =>
         d.createObjectStore('loadProgress');
         d.createObjectStore('pending');
       }
+      if (oldVersion < 3) d.createObjectStore('history', { keyPath: 'id', autoIncrement: true });
     },
   });
+
+export type SavedRead = { id?: number; at: number; mac: string; name: string; profile: ProfileData };
+
+export async function saveRead(r: SavedRead): Promise<number> {
+  return (await (await db()).put('history', r)) as number;
+}
+
+/** Newest first. */
+export async function listReads(): Promise<SavedRead[]> {
+  return ((await (await db()).getAll('history')) as SavedRead[]).reverse();
+}
+
+export async function deleteRead(id: number): Promise<void> {
+  await (await db()).delete('history', id);
+}
 
 export type Progress = { lastEntry: number; lastClock: number };
 // Rows tagged with their entry index so overlapping appends replace by index.
