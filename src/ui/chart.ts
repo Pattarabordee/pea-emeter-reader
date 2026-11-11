@@ -1,6 +1,7 @@
 import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Legend, Tooltip } from 'chart.js';
 import type { Reading } from '../profiles/templates';
 import { bangkokIso } from '../export/format';
+import type { ProfileColumn, ProfileData } from '../profiles/history';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Legend, Tooltip);
 
@@ -12,6 +13,25 @@ export function chartSeries(rows: Reading[][], keys: (k: string) => boolean): { 
   });
   const names = [...new Set(rows.flatMap((r) => r.map((x) => x.key)).filter(keys))];
   return { labels, series: names.map((key) => ({ key, data: rows.map((r) => { const x = r.find((y) => y.key === key); return x && !x.missing ? x.value : null; }) })) };
+}
+
+const LINE_COLORS = ['#c62828', '#2e7d32', '#1565c0', '#ef6c00'];
+
+/** Glue (Chart.js): one line per column of a history read that `pick` selects, against Bangkok time. */
+export function drawProfileChart(canvas: HTMLCanvasElement, p: ProfileData, pick: (c: ProfileColumn) => boolean, yTitle: string): void {
+  Chart.getChart(canvas)?.destroy();
+  const cols = p.columns.flatMap((c, i) => (pick(c) ? [{ c, i }] : []));
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: p.rows.map((r) => (r[0] == null ? '—' : bangkokIso(r[0]).slice(5, 16).replace('T', ' '))),
+      datasets: cols.map(({ c, i }, n) => ({
+        label: `${c.key} (${c.unit})`, data: p.rows.map((r) => r[i + 1]), spanGaps: false, pointRadius: 0, borderWidth: 1.5,
+        borderColor: LINE_COLORS[n % LINE_COLORS.length], backgroundColor: LINE_COLORS[n % LINE_COLORS.length],
+      })),
+    },
+    options: { animation: false, maintainAspectRatio: false, scales: { y: { title: { display: true, text: yTitle } } } },
+  });
 }
 
 let chart: Chart | undefined;

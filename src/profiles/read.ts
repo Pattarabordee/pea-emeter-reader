@@ -9,7 +9,7 @@ const CHUNK = 100;
  *  if the meter rejects by-entry access. `onChunk(rowsSoFar)` runs after each chunk — for progress and partial saves. */
 export async function readRange(
   client: DlmsClient, obis: string, cols: ColumnSpec[], fromEntry: number, toEntry: number,
-  opts?: { onFallback?: () => void; onChunk?: (rowsSoFar: number) => void },
+  opts?: { onFallback?: () => void; onChunk?: (rowsSoFar: number, rows: Reading[][]) => void },
 ): Promise<Reading[][]> {
   if (toEntry < fromEntry) return [];
   const out: Reading[][] = [];
@@ -17,7 +17,7 @@ export async function readRange(
     for (let from = fromEntry; from <= toEntry; from += CHUNK) {
       const rows = await readRowsByEntry(client, obis, from, Math.min(CHUNK, toEntry - from + 1));
       for (const r of rows) out.push(decodeRow(r.t === 'structure' ? r.v : [], cols));
-      opts?.onChunk?.(out.length);
+      opts?.onChunk?.(out.length, out);
     }
     return out;
   } catch (e) {
