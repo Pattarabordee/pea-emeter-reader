@@ -1,14 +1,16 @@
 import { openDB } from 'idb';
 import type { Reading } from '../profiles/templates';
 import type { ProfileData } from '../profiles/history';
+import type { Place } from './places';
 import type { MeterEntry } from './meterList';
 
 // DB "emeter": store `meters` (key mac; includes the imported password) and
 // store `passwords` (key mac -> user override). getPassword prefers the override.
 // v2 adds `loadProgress` (mac -> Progress) and `pending` (mac -> PendingRec).
 // v3 adds `history` (auto id -> SavedRead): every history read, kept so nothing read in the field is lost.
+// v4 adds `places` (mac -> Place): meter positions from the GIS file, for the map.
 const db = () =>
-  openDB('emeter', 3, {
+  openDB('emeter', 4, {
     upgrade(d, oldVersion) {
       if (oldVersion < 1) {
         d.createObjectStore('meters', { keyPath: 'mac' });
@@ -19,8 +21,20 @@ const db = () =>
         d.createObjectStore('pending');
       }
       if (oldVersion < 3) d.createObjectStore('history', { keyPath: 'id', autoIncrement: true });
+      if (oldVersion < 4) d.createObjectStore('places', { keyPath: 'mac' });
     },
   });
+
+/** Replaces all stored positions (a new GIS file is the whole list). */
+export async function savePlaces(places: Place[]): Promise<void> {
+  const tx = (await db()).transaction('places', 'readwrite');
+  await tx.store.clear();
+  await Promise.all([...places.map((p) => tx.store.put(p)), tx.done]);
+}
+
+export async function listPlaces(): Promise<Place[]> {
+  return (await db()).getAll('places');
+}
 
 export type SavedRead = { id?: number; at: number; mac: string; name: string; profile: ProfileData };
 

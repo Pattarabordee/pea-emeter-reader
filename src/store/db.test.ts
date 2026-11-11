@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
-import { deleteRead, getPassword, listMeters, listReads, saveMeters, saveRead, setPassword } from './db';
+import { deleteRead, getPassword, listMeters, listPlaces, listReads, saveMeters, savePlaces, saveRead, setPassword } from './db';
 
 const m = { name: 'A B', mac: 'AA:BB:CC:DD:EE:FF', password: '00000000', type: 1 as const, descriptor: 'd' };
 
@@ -22,6 +22,12 @@ describe('db', () => {
     expect((await listReads()).map((r) => r.name)).toEqual(['B', 'A']);
     await deleteRead(a);
     expect((await listReads()).map((r) => r.id)).toEqual([b]);
+  });
+  it('a new GIS file replaces all stored places', async () => {
+    const p = { mac: 'AA:BB:CC:DD:EE:01', serial: '1', maker: 'X', phase: '1', office: 'pkn', lat: 17, lon: 103 };
+    await savePlaces([p, { ...p, mac: 'AA:BB:CC:DD:EE:02' }]);
+    await savePlaces([{ ...p, serial: '2' }]);
+    expect(await listPlaces()).toEqual([{ ...p, serial: '2' }]);
   });
   it('import password is the default when no override', async () => {
     await saveMeters([{ ...m, mac: '11:11:11:11:11:11', password: 'imp' }]);

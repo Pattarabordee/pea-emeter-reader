@@ -4,6 +4,7 @@ import { readLive } from '../profiles/live';
 import type { Reading } from '../profiles/templates';
 import { parseMeterList, type MeterEntry } from '../store/meterList';
 import { getPassword, listMeters, saveMeters, setPassword } from '../store/db';
+import { normMac } from '../store/places';
 
 const TIMEOUT_MS = 10_000;
 export const READ_TIMEOUT_MS = 30_000; // whole readLive batch (6-15 sequential GETs over 20-byte BLE chunks); field test tunes it
@@ -41,7 +42,10 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElemen
 };
 
 /** The one connected link, shared with the stored-data screens. `busy` serialises GETs: the Live poll skips a tick while a profile read runs. */
-export const shared: { client?: DlmsClient; meter?: MeterEntry; busy: boolean; end?: (msg: string) => Promise<void> } = { busy: false };
+export const shared: {
+  client?: DlmsClient; meter?: MeterEntry; busy: boolean; end?: (msg: string) => Promise<void>;
+  pick?: (mac: string, label: string) => boolean; // select a meter by MAC (from the map); false when it isn't in the imported list
+} = { busy: false };
 
 /** Glue (Web Bluetooth + interval): field-verified, not unit-tested. */
 export function mountLive(root: HTMLElement): void {
@@ -90,6 +94,14 @@ export function mountLive(root: HTMLElement): void {
   };
 
   shared.end = end; // lets other screens drop a possibly desynced session
+  shared.pick = (mac, label) => {
+    const m = meters.find((x) => normMac(x.mac) === normMac(mac));
+    if (!m) return false;
+    picker.value = m.mac;
+    void loadPw();
+    status.textContent = `เลือก ${label} แล้ว กด Connect แล้วเลือกชื่อ ${m.name} ในหน้าต่าง Bluetooth`;
+    return true;
+  };
   stop.onclick = () => void end('Disconnected');
 
   connect.onclick = async () => {
