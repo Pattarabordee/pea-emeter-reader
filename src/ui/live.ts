@@ -72,8 +72,17 @@ export function mountLive(root: HTMLElement): void {
     const f = file.files?.[0];
     if (!f) return;
     try {
-      await saveMeters(parseMeterList(await readPicked(f)));
+      const text = await readPicked(f);
+      const list = parseMeterList(text);
+      if (!list.length) {
+        status.textContent = /(^|,)\s*lat\s*,/im.test(text.split(/\r?\n/, 1)[0])
+          ? 'นี่คือไฟล์พิกัด (.csv) ให้โหลดที่แท็บ "แผนที่" ช่องนี้ใช้ไฟล์รายชื่อมิเตอร์ (.txt) ที่มีรหัสผ่าน'
+          : 'ไม่พบมิเตอร์ในไฟล์นี้ ต้องเป็นไฟล์รายชื่อมิเตอร์ (.txt): ชื่อ,MAC,รหัสผ่าน,ชนิด 1/3,คำอธิบาย';
+        return;
+      }
+      await saveMeters(list);
       await refreshList();
+      status.textContent = `โหลดรายชื่อ ${list.length} มิเตอร์แล้ว`;
     } catch (e) { status.textContent = `Import failed: ${(e as Error).message}`; }
   };
 
