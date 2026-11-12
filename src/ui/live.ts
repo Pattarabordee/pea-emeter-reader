@@ -52,12 +52,26 @@ export const shared: {
 export function mountLive(root: HTMLElement): void {
   const picker = h('select');
   const file = h('input'); file.type = 'file'; file.accept = '.txt';
-  const pw = h('input'); pw.type = 'password'; pw.placeholder = 'password (from list; edit if needed)'; pw.autocomplete = 'off';
+  const pw = h('input'); pw.type = 'password'; pw.placeholder = 'รหัสผ่านมิเตอร์'; pw.autocomplete = 'off';
   const connect = h('button', 'Connect');
   const stop = h('button', 'Stop / Disconnect'); stop.disabled = true;
   const status = h('p'); status.className = 'status';
   const out = h('div');
-  root.append(h('h2', 'Live'), file, picker, pw, connect, stop, status, out);
+  // Off-list mode: connect to a meter not in the .txt list by scanning. Web Bluetooth has no MAC, so the user
+  // picks the device in the chooser (by advertised name) and supplies the password + phase here.
+  const offList = h('input'); offList.type = 'checkbox';
+  const offLabel = h('label'); offLabel.append(offList, ' มิเตอร์นอกรายชื่อ (สแกนเอง)');
+  const typeSel = h('select');
+  typeSel.append(Object.assign(h('option', '1 เฟส'), { value: '1' }), Object.assign(h('option', '3 เฟส'), { value: '3' }));
+  const typeRow = h('div'); typeRow.className = 'row'; typeRow.hidden = true;
+  typeRow.append(h('span', 'ชนิดมิเตอร์'), typeSel);
+  root.append(h('h2', 'Live'), file, picker, offLabel, typeRow, pw, connect, stop, status, out);
+  offList.onchange = () => {
+    typeRow.hidden = !offList.checked;
+    picker.hidden = offList.checked;
+    if (offList.checked) pw.value = '';
+    else void loadPw();
+  };
 
   let meters: MeterEntry[] = [];
   const current = () => meters.find((m) => m.mac === picker.value);
@@ -115,23 +129,27 @@ export function mountLive(root: HTMLElement): void {
   stop.onclick = () => void end('Disconnected');
 
   connect.onclick = async () => {
-    const m = current();
-    if (!m) { status.textContent = 'Import a meter list and pick a meter first'; return; }
+    const listed = current();
+    if (!offList.checked && !listed) { status.textContent = 'นำเข้าไฟล์รายชื่อแล้วเลือกมิเตอร์ก่อน หรือติ๊ก "มิเตอร์นอกรายชื่อ"'; return; }
+    if (offList.checked && !pw.value) { status.textContent = 'ใส่รหัสผ่านมิเตอร์ก่อน'; return; }
     connect.disabled = true; stop.disabled = false;
-    status.textContent = 'Connecting…';
+    status.textContent = 'กำลังเชื่อมต่อ… เลือกมิเตอร์ในหน้าต่าง Bluetooth';
     try {
-      const transport = await connectMeter(); // first await after the click keeps the user gesture
+      const { transport, name } = await connectMeter(); // first await after the click keeps the user gesture
+      // Off-list meter has no MAC (Web Bluetooth hides it); label it by the advertised name and don't persist the password.
+      const m: MeterEntry = listed && !offList.checked ? listed
+        : { name: name || 'มิเตอร์นอกรายชื่อ', mac: '', password: pw.value, type: Number(typeSel.value) as 1 | 3, descriptor: 'นอกรายชื่อ (สแกน)' };
       const client = new DlmsClient(transport, { clientAddr: 32, serverAddr: 1, password: new TextEncoder().encode(pw.value) });
       session = { transport, client };
       await withTimeout(client.associate(), 'associate');
       shared.client = client; shared.meter = m;
-      await setPassword(m.mac, pw.value); // only a password that worked is persisted
+      if (m.mac) await setPassword(m.mac, pw.value); // only a password that worked is persisted; off-list has no stable key
       const tick = async () => {
         if (shared.busy || !session) return;
         shared.busy = true;
         try {
           renderReadings(out, await withTimeout(readLive(client, m.type), 'read', READ_TIMEOUT_MS));
-          status.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+          status.textContent = `${m.name} · อัปเดต ${new Date().toLocaleTimeString()}`;
         } catch (e) {
           await end(`Error: ${(e as Error).message}`);
         } finally { shared.busy = false; }

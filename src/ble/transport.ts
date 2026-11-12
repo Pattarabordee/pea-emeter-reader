@@ -96,8 +96,9 @@ export class BleTransport implements Transport {
   }
 }
 
-/** Chooser-based connect (cannot target a MAC). Glue: field-verified, not run in CI. */
-export async function connectMeter(chunkSize?: number): Promise<BleTransport> {
+/** Chooser-based connect (cannot target a MAC; Web Bluetooth hides it). Returns the transport and the device's
+ *  advertised name (usually the serial), which labels an off-list meter. Glue: field-verified, not run in CI. */
+export async function connectMeter(chunkSize?: number): Promise<{ transport: BleTransport; name: string }> {
   const device = await navigator.bluetooth.requestDevice({
     filters: SERVICE_UUIDS.map((s) => ({ services: [s] })),
     optionalServices: SERVICE_UUIDS,
@@ -121,5 +122,5 @@ export async function connectMeter(chunkSize?: number): Promise<BleTransport> {
     throw new Error('write/notify characteristics not found');
   }
   await notifyChar.startNotifications();
-  return new BleTransport(server, writeChar, notifyChar, chunkSize);
+  return { transport: new BleTransport(server, writeChar, notifyChar, chunkSize), name: device.name ?? '' };
 }
