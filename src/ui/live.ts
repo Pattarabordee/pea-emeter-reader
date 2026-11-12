@@ -6,6 +6,7 @@ import { parseMeterList, type MeterEntry } from '../store/meterList';
 import { getPassword, listMeters, saveMeters, setPassword } from '../store/db';
 import { normMac } from '../store/places';
 import { readPicked } from './readFile';
+import { renderDashboard } from './dashboard';
 
 const TIMEOUT_MS = 10_000;
 export const READ_TIMEOUT_MS = 30_000; // whole readLive batch (6-15 sequential GETs over 20-byte BLE chunks); field test tunes it
@@ -148,7 +149,7 @@ export function mountLive(root: HTMLElement): void {
         if (shared.busy || !session) return;
         shared.busy = true;
         try {
-          renderReadings(out, await withTimeout(readLive(client, m.type), 'read', READ_TIMEOUT_MS));
+          renderDashboard(out, await withTimeout(readLive(client, m.type), 'read', READ_TIMEOUT_MS));
           status.textContent = `${m.name} · อัปเดต ${new Date().toLocaleTimeString()}`;
         } catch (e) {
           await end(`Error: ${(e as Error).message}`);
