@@ -69,6 +69,22 @@ tr.warn td { font-weight: 600; background: #fff6f5; }
 .mapbox { height: 58vh; min-height: 18rem; padding: 0; overflow: hidden; }
 .status { color: var(--mute); font-size: .9rem; min-height: 1.1em; }
 
+/* live dashboard: one hero figure + KPI tiles */
+.dash { display: grid; gap: .7rem; }
+.hero {
+  background: linear-gradient(135deg, #e9fbf7, #ffffff 70%); border: 1px solid #cdeee9;
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.15rem 1rem; text-align: center;
+}
+.hero .lb { color: var(--mute); font-size: .85rem; }
+.hero .big { font-size: 2.6rem; font-weight: 800; color: var(--accent-dark); line-height: 1.05; margin: .25rem 0 0; letter-spacing: -.5px; }
+.hero .big .u { font-size: 1.05rem; font-weight: 600; color: var(--mute); letter-spacing: 0; }
+.kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem; }
+.kpi { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: .8rem; }
+.kpi .ic { font-size: 1.2rem; line-height: 1; }
+.kpi .lb { color: var(--mute); font-size: .78rem; margin: .35rem 0 .15rem; }
+.kpi .val { font-size: 1.35rem; font-weight: 700; color: var(--ink); }
+.kpi .val .u { font-size: .82rem; font-weight: 500; color: var(--mute); }
+
 /* bottom tab bar */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
