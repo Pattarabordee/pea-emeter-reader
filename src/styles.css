@@ -76,8 +76,15 @@ tr.warn td { font-weight: 600; background: #fff6f5; }
   border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.15rem 1rem; text-align: center;
 }
 .hero .lb { color: var(--mute); font-size: .85rem; }
-.hero .big { font-size: 2.6rem; font-weight: 800; color: var(--accent-dark); line-height: 1.05; margin: .25rem 0 0; letter-spacing: -.5px; }
-.hero .big .u { font-size: 1.05rem; font-weight: 600; color: var(--mute); letter-spacing: 0; }
+
+/* circular voltage gauge */
+.gauge-wrap { position: relative; width: 184px; height: 184px; margin: .4rem auto 0; }
+.gauge { display: block; width: 184px; height: 184px; }
+.gauge-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.gauge-center .big { font-size: 2.3rem; font-weight: 800; color: var(--ink); line-height: 1; letter-spacing: -.5px; }
+.gauge-center .big .u { font-size: .95rem; font-weight: 600; color: var(--mute); letter-spacing: 0; }
+.gauge-center .st { font-size: .78rem; font-weight: 700; margin-top: .2rem; }
+.gauge-center .sub { font-size: .8rem; color: var(--mute); margin-top: .25rem; }
 .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem; }
 .kpi { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: .8rem; }
 .kpi .ic { font-size: 1.2rem; line-height: 1; }
