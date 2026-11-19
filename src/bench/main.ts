@@ -17,7 +17,8 @@ const BILLING = '1.0.98.1.0.255';
 const LOAD = '1.0.99.1.0.255';
 const STEP_TIMEOUT_MS = 20000;
 
-type Row = { pass: number; cfg: string; step: string; ms: number; bytes: number; note: string };
+declare const __BUILD__: string; // build time, set in vite.config.ts: tells a cached old page from the current one
+type Row = { pass: number; meter: string; cfg: string; step: string; ms: number; bytes: number; note: string };
 type Add = (step: string, ms: number, bytes?: number, note?: string) => void;
 type Link = { transport: Transport; rx(): number; reset(): void };
 type SerialPort = { open(o: { baudRate: number }): Promise<void>; readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> };
@@ -85,6 +86,7 @@ root.append(
   lab('ขนาดก้อนเขียนที่ทดสอบ (ไบต์)', chunks), bPhone,
   radioSec,
   h('h2', 'ผล'), bSave, summary, table,
+  h('p', `รุ่นหน้าทดสอบ: ${__BUILD__} UTC`),
 );
 
 let radio: RadioHead | undefined;
@@ -244,7 +246,7 @@ async function runPasses(btn: HTMLButtonElement, list: number[], cfg: (n: number
   for (const n of list) {
     for (let k = 0; k < Number(repeats.value); k++) {
       const p = ++pass;
-      const add: Add = (step, ms, bytes = 0, note = '') => { rows.push({ pass: p, cfg: cfg(n), step, ms, bytes, note }); render(); };
+      const add: Add = (step, ms, bytes = 0, note = '') => { rows.push({ pass: p, meter, cfg: cfg(n), step, ms, bytes, note }); render(); };
       status.textContent = `รอบ ${p}: ${cfg(n)}…`;
       try { await one(add, n); }
       catch (e) { add('ยกเลิกรอบ', 0, 0, `ผิดพลาด: ${(e as Error).message}`); pw.hidden = false; } // the stored password may be wrong: let it be retyped
@@ -294,7 +296,7 @@ bPhone.onclick = async () => {
 };
 
 bSave.onclick = () => {
-  const blob = new Blob([JSON.stringify({ test: 'T1', at: new Date().toISOString(), meter, agent: navigator.userAgent, scan: scanResult, rows }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ test: 'T1', build: __BUILD__, at: new Date().toISOString(), meter, agent: navigator.userAgent, scan: scanResult, rows }, null, 2)], { type: 'application/json' });
   const a = h('a', '', { href: URL.createObjectURL(blob), download: `t1-${Date.now()}.json` });
   a.click();
   URL.revokeObjectURL(a.href);

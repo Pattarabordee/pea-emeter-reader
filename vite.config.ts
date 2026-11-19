@@ -6,6 +6,7 @@ const BASE = '/pea-emeter-reader/';
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? BASE : '/',
   // bench.html is the T1 timing test page; a phone can only open it from the published site
+  define: { __BUILD__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')) },
   build: { rollupOptions: { input: ['index.html', 'bench.html'] } },
   plugins: [
     VitePWA({
