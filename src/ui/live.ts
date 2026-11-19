@@ -110,6 +110,8 @@ export function mountLive(root: HTMLElement): void {
     } catch (e) { status.textContent = `Import failed: ${(e as Error).message}`; }
   };
 
+  const why = (e: unknown) => ((e as Error).message === 'link lost'
+    ? 'Bluetooth หลุดและต่อใหม่ไม่ได้: เข้าใกล้มิเตอร์แล้วกด Connect ใหม่' : `Error: ${(e as Error).message}`);
   let timer: ReturnType<typeof setInterval> | undefined;
   let session: { transport: BleTransport; client: DlmsClient } | undefined;
 
@@ -188,14 +190,15 @@ export function mountLive(root: HTMLElement): void {
           renderDashboard(out, await withTimeout(readLive(client, m.type), 'read', READ_TIMEOUT_MS));
           status.textContent = `${m.name} · อัปเดต ${new Date().toLocaleTimeString()}`;
         } catch (e) {
-          await end(`Error: ${(e as Error).message}`);
+          await end(why(e));
         } finally { shared.busy = false; }
       };
       await tick();
       if (session) timer = setInterval(() => void tick(), INTERVAL_MS);
     } catch (e) {
+      if (!session && (e as Error).message === 'link lost') return; // our own Stop cut the link: keep its message
       pw.hidden = false;
-      await end(`Error: ${(e as Error).message}`);
+      await end(why(e));
     }
   };
 
