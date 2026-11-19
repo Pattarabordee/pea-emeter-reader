@@ -15,12 +15,16 @@ import { mountMap } from '../ui/map';
 
 const BILLING = '1.0.98.1.0.255';
 const LOAD = '1.0.99.1.0.255';
-const STEP_TIMEOUT_MS = 20000;
+const STEP_TIMEOUT_MS = 8000; // the slowest step measured in the field took 3.1 s
+const RESEND_MS = 1500; // first reply frame normally arrives within 0.5 s
+const MAX_RESENDS = 2;
 
 declare const __BUILD__: string; // build time, set in vite.config.ts: tells a cached old page from the current one
 type Row = { pass: number; meter: string; distM: number | null; gpsAccM: number | null; cfg: string; step: string; ms: number; bytes: number; note: string };
 type Add = (step: string, ms: number, bytes?: number, note?: string) => void;
-type Link = { transport: Transport; rx(): number; reset(): void };
+// lost: rejects when the radio link drops, so a step fails at once instead of waiting out its timeout.
+// resends: frames sent again since reset() because nothing came back (see phonePass).
+type Link = { transport: Transport; rx(): number; reset(): void; lost?: Promise<never>; resends?(): number };
 type SerialPort = { open(o: { baudRate: number }): Promise<void>; readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> };
 
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '', props: Partial<HTMLElementTagNameMap[K]> = {}): HTMLElementTagNameMap[K] =>
@@ -32,8 +36,8 @@ const withTimeout = <T>(p: Promise<T>, what: string): Promise<T> =>
 const root = document.getElementById('app')!;
 const status = h('p', 'ใส่รหัสผ่านมิเตอร์ แล้วเลือกวิธีทดสอบ', { id: 'status' });
 const pw = h('input', '', { type: 'password', placeholder: 'รหัสผ่านมิเตอร์', autocomplete: 'off' });
-const repeats = h('input', '', { type: 'number', value: '3', min: '1', max: '10' });
-const chunks = h('input', '', { value: '20', // field run 2026-11-19: 20 and 180 gave the same timings
+const repeats = h('input', '', { type: 'number', value: '2', min: '1', max: '10' });
+const chunks = h('input', '', { value: '20,180', // 180 sends the long AARQ in one write: tests whether gaps between pieces make the meter drop it
  size: 8, title: 'จำนวนไบต์ต่อการเขียนหนึ่งครั้ง' });
 const bPhone = h('button', 'เลือกมิเตอร์แล้วรัน T1 จากโทรศัพท์');
 const bConnect = h('button', '1. ต่อหัววิทยุ (USB)');
@@ -186,13 +190,14 @@ async function dlmsSteps(link: Link, add: Add, password: Uint8Array, preMs: numb
   const timed = async <T>(step: string, f: () => Promise<T>, note: (v: T, bytes: number, ms: number) => string = () => ''): Promise<T | undefined> => {
     link.reset();
     const t = performance.now();
+    const rs = () => { const k = link.resends?.() ?? 0; return k ? ` · ส่งซ้ำ ${k} ครั้ง` : ''; };
     try {
-      const v = await withTimeout(f(), step);
+      const v = await Promise.race([withTimeout(f(), step), ...(link.lost ? [link.lost] : [])]);
       const ms = performance.now() - t;
-      add(step, ms, link.rx(), note(v, link.rx(), ms));
+      add(step, ms, link.rx(), note(v, link.rx(), ms) + rs());
       return v;
     } catch (e) {
-      add(step, performance.now() - t, link.rx(), `ผิดพลาด: ${(e as Error).message}`);
+      add(step, performance.now() - t, link.rx(), `ผิดพลาด: ${(e as Error).message}${rs()}`);
       if (!/data-access-result/.test((e as Error).message)) throw e;
       return undefined;
     }
@@ -203,6 +208,7 @@ async function dlmsSteps(link: Link, add: Add, password: Uint8Array, preMs: numb
   };
   const buffer = (obis: string, access: SelectiveAccess) => () => client.get(7, obis, 2, access);
 
+  try {
   const tA = performance.now();
   await timed('SNRM + AARQ', () => client.associate());
   add('T0 รวม', preMs + (performance.now() - tA));
@@ -220,6 +226,12 @@ async function dlmsSteps(link: Link, add: Add, password: Uint8Array, preMs: numb
     const to = new Date(), day = new Date(to.getTime() - 86400000);
     await timed('load by-range 24 ชม. ทุกคอลัมน์', buffer(LOAD, { kind: 'by-range', from: day, to }), rowsNote);
     await timed('load by-range 24 ชม. เฉพาะคอลัมน์วัด', buffer(LOAD, { kind: 'by-range', from: day, to, columns: cols.slice(2) }), rowsNote);
+  }
+  } catch (e) {
+    // Field run 2026-11-19: 5 of 7 stalls at AARQ came right after a pass that died mid-way on the same meter.
+    // Close the session before dropping the link, in case the meter was still holding the old one.
+    await Promise.race([client.release(), sleep(300)]).catch(() => { /* link already gone */ });
+    throw e;
   }
   await client.release();
 }
@@ -257,8 +269,32 @@ async function phonePass(dev: BluetoothDevice, add: Add, chunkSize: number, pass
   // attached (their clients ignore the frames); remove listeners here if a pass ever sees doubled data.
   const t = new BleTransport(server, wr, nt, chunkSize);
   let n = 0; // counts whole HDLC frames, not raw notifications
-  const transport: Transport = { write: (b) => t.write(b), onData: (cb) => t.onData((b) => { n += b.length; cb(b); }) };
-  await dlmsSteps({ transport, rx: () => n, reset: () => { n = 0; } }, add, password, t3 - t0);
+  // Field run 2026-11-19 (5 to 30 m): every failure was a stall, the link still up. So when nothing comes back after a
+  // frame, the same bytes go out again (an HDLC retransmission: same sequence numbers), and the step notes it.
+  let last: Uint8Array | undefined, timer: ReturnType<typeof setTimeout> | undefined, sentAgain = 0, resent = 0;
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (!last || sentAgain >= MAX_RESENDS) return;
+      sentAgain++; resent++;
+      t.write(last).then(arm, () => { /* link gone: `lost` reports it */ });
+    }, RESEND_MS);
+  };
+  const transport: Transport = {
+    write: async (b) => { last = b; sentAgain = 0; await t.write(b); arm(); },
+    onData: (cb) => t.onData((b) => { clearTimeout(timer); n += b.length; cb(b); }),
+  };
+  let onDrop = () => {};
+  const lost = new Promise<never>((_, rej) => { onDrop = () => rej(new Error('Bluetooth หลุด')); });
+  lost.catch(() => { /* also fires on our own disconnect after the pass */ });
+  dev.addEventListener('gattserverdisconnected', onDrop, { once: true });
+  try {
+    await dlmsSteps({ transport, rx: () => n, reset: () => { n = 0; resent = 0; }, lost, resends: () => resent }, add, password, t3 - t0);
+  } finally {
+    clearTimeout(timer);
+    last = undefined;
+    dev.removeEventListener('gattserverdisconnected', onDrop);
+  }
 }
 
 async function runPasses(btn: HTMLButtonElement, list: number[], cfg: (n: number) => string, one: (add: Add, n: number) => Promise<void>, drop: () => unknown): Promise<void> {
