@@ -1,4 +1,6 @@
 import { ByteReader } from './axdr';
+import { obisToBytes } from './obis';
+import type { CaptureObject } from './types';
 
 // Selective access (Green Book): selector 2 = entry-descriptor. Task 7 builds requests with it.
 export type SelectiveAccess = {
@@ -7,13 +9,35 @@ export type SelectiveAccess = {
   toEntry: number;
   fromSelectedValue?: number; // default 1 (first column)
   toSelectedValue?: number; // default 0 (through last column)
+} | {
+  // selector 1 = range-descriptor on the clock column. from/to are read as the meter's wall clock (local getters).
+  // Encoding written from the Green Book layout and not yet confirmed on a PEA meter: bench T1 is what checks it.
+  kind: 'by-range';
+  from: Date;
+  to: Date;
+  columns?: CaptureObject[]; // empty = all columns
 };
 
 const IIAP = 0xc1; // invoke-id 1, confirmed, normal priority
 const u32 = (n: number) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
 
+const u16 = (n: number) => [0x12, n >> 8, n & 0xff];
+const captureDef = (c: CaptureObject) => [0x02, 0x04, ...u16(c.classId), 0x09, 0x06, ...obisToBytes(c.obis), 0x0f, c.attributeIndex, ...u16(c.dataIndex)];
+// octet-string(12) date-time: day-of-week and deviation "not specified", status 0
+const dateTime = (d: Date) => [0x09, 0x0c, d.getFullYear() >> 8, d.getFullYear() & 0xff, d.getMonth() + 1, d.getDate(), 0xff,
+  d.getHours(), d.getMinutes(), d.getSeconds(), 0x00, 0x80, 0x00, 0x00];
 function accessBytes(a?: SelectiveAccess): number[] {
   if (!a) return [0x00];
+  if (a.kind === 'by-range') {
+    const cols = a.columns ?? [];
+    return [
+      0x01, 0x01, // access-selection present, selector 1 (by-range)
+      0x02, 0x04, // structure(4): restricting object, from, to, selected values
+      ...captureDef({ classId: 8, obis: '0.0.1.0.0.255', attributeIndex: 2, dataIndex: 0 }),
+      ...dateTime(a.from), ...dateTime(a.to),
+      0x01, cols.length, ...cols.flatMap(captureDef),
+    ];
+  }
   return [
     0x01, 0x02, // access-selection present, selector 2 (by-entry)
     0x02, 0x04, // structure(4)
