@@ -10,6 +10,7 @@ Name.txt
 node_modules/
 dist/
 dev-dist/
+.pio/
 *.log
 
 # sdd workspace
