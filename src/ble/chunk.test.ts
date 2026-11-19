@@ -1,8 +1,38 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { encodeHdlc, decodeHdlc } from '../dlms/hdlc';
-import { advertisedNames, chunk, FrameReassembler } from './transport';
+import { advertisedNames, BleTransport, chunk, FrameReassembler, RESEND_MS } from './transport';
 
 const u = (...n: number[]) => new Uint8Array(n);
+
+describe('BleTransport resend', () => {
+  it('sends a frame again when nothing comes back, twice at most, and stops once the meter answers', async () => {
+    vi.useFakeTimers();
+    const writes: number[] = [];
+    let notify: (ev: unknown) => void = () => {};
+    const ch = {
+      properties: { writeWithoutResponse: true },
+      writeValueWithoutResponse: async (p: Uint8Array) => { writes.push(p.length); },
+      addEventListener: (_: string, cb: (ev: unknown) => void) => { notify = cb; },
+    } as unknown as BluetoothRemoteGATTCharacteristic;
+    const server = { connected: true, disconnect() {}, device: { addEventListener() {} } } as unknown as BluetoothRemoteGATTServer;
+    const t = new BleTransport(server, ch, ch);
+    const got: Uint8Array[] = [];
+    t.onData((b) => got.push(b));
+
+    await t.write(u(1, 2, 3));
+    await vi.advanceTimersByTimeAsync(RESEND_MS * 5);
+    expect(writes).toEqual([3, 3, 3]); // the original and two resends, then it gives up
+    expect(t.resent).toBe(2);
+
+    await t.write(u(4, 5));
+    const reply = u(0x7e, 9, 9, 0x7e);
+    notify({ target: { value: new DataView(reply.buffer) } });
+    await vi.advanceTimersByTimeAsync(RESEND_MS * 5);
+    expect(writes).toEqual([3, 3, 3, 2]); // answered: not sent again
+    expect(got).toHaveLength(1);
+    vi.useRealTimers();
+  });
+});
 
 describe('advertisedNames', () => {
   it('adds the RE-prefixed form of a bare serial and keeps other names as they are', () => {

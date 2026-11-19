@@ -164,6 +164,9 @@ export function mountLive(root: HTMLElement): void {
         : { name: name || 'มิเตอร์นอกรายชื่อ', mac: '', password: pw.value, type: Number(typeSel.value) as 1 | 3, descriptor: 'นอกรายชื่อ (สแกน)' };
       const client = new DlmsClient(transport, { clientAddr: 32, serverAddr: 1, password: new TextEncoder().encode(pw.value) });
       session = { transport, client };
+      // Fail at once when the link drops, instead of waiting out a 30 s read. end() clears `session` before it
+      // disconnects, so our own disconnect does not land here.
+      transport.onLost(() => { if (session?.transport === transport) void end('Bluetooth หลุด: เข้าใกล้มิเตอร์แล้วกด Connect ใหม่'); });
       await withTimeout(client.associate(), 'associate');
       shared.client = client; shared.meter = m;
       if (m.mac) await setPassword(m.mac, pw.value); // only a password that worked is persisted; off-list has no stable key

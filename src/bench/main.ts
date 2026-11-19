@@ -16,8 +16,6 @@ import { mountMap } from '../ui/map';
 const BILLING = '1.0.98.1.0.255';
 const LOAD = '1.0.99.1.0.255';
 const STEP_TIMEOUT_MS = 8000; // the slowest step measured in the field took 3.1 s
-const RESEND_MS = 1500; // first reply frame normally arrives within 0.5 s
-const MAX_RESENDS = 2;
 
 declare const __BUILD__: string; // build time, set in vite.config.ts: tells a cached old page from the current one
 type Row = { pass: number; meter: string; distM: number | null; gpsAccM: number | null; cfg: string; step: string; ms: number; bytes: number; note: string };
@@ -269,31 +267,14 @@ async function phonePass(dev: BluetoothDevice, add: Add, chunkSize: number, pass
   // attached (their clients ignore the frames); remove listeners here if a pass ever sees doubled data.
   const t = new BleTransport(server, wr, nt, chunkSize);
   let n = 0; // counts whole HDLC frames, not raw notifications
-  // Field run 2026-11-19 (5 to 30 m): every failure was a stall, the link still up. So when nothing comes back after a
-  // frame, the same bytes go out again (an HDLC retransmission: same sequence numbers), and the step notes it.
-  let last: Uint8Array | undefined, timer: ReturnType<typeof setTimeout> | undefined, sentAgain = 0, resent = 0;
-  const arm = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      if (!last || sentAgain >= MAX_RESENDS) return;
-      sentAgain++; resent++;
-      t.write(last).then(arm, () => { /* link gone: `lost` reports it */ });
-    }, RESEND_MS);
-  };
-  const transport: Transport = {
-    write: async (b) => { last = b; sentAgain = 0; await t.write(b); arm(); },
-    onData: (cb) => t.onData((b) => { clearTimeout(timer); n += b.length; cb(b); }),
-  };
-  let onDrop = () => {};
-  const lost = new Promise<never>((_, rej) => { onDrop = () => rej(new Error('Bluetooth หลุด')); });
+  // BleTransport sends a frame again when nothing comes back; each step notes how often (t.resent).
+  const transport: Transport = { write: (b) => t.write(b), onData: (cb) => t.onData((b) => { n += b.length; cb(b); }) };
+  const lost = new Promise<never>((_, rej) => t.onLost(() => rej(new Error('Bluetooth หลุด'))));
   lost.catch(() => { /* also fires on our own disconnect after the pass */ });
-  dev.addEventListener('gattserverdisconnected', onDrop, { once: true });
   try {
-    await dlmsSteps({ transport, rx: () => n, reset: () => { n = 0; resent = 0; }, lost, resends: () => resent }, add, password, t3 - t0);
+    await dlmsSteps({ transport, rx: () => n, reset: () => { n = 0; t.resent = 0; }, lost, resends: () => t.resent }, add, password, t3 - t0);
   } finally {
-    clearTimeout(timer);
-    last = undefined;
-    dev.removeEventListener('gattserverdisconnected', onDrop);
+    t.disconnect(); // also stops any pending resend
   }
 }
 

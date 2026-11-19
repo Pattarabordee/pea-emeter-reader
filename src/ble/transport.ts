@@ -50,9 +50,19 @@ export class FrameReassembler {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+export const RESEND_MS = 1500; // first reply frame arrives within 0.5 s in the field
+const MAX_RESENDS = 2;
+
 export class BleTransport implements Transport {
   private cb: (b: Uint8Array) => void = () => {};
   private readonly re = new FrameReassembler();
+  // Field run 2026-11-19 (5 to 30 m): reads failed by stalling with the link still up, never by a refusal. So a frame
+  // that gets no reply is sent again as it was (an HDLC retransmission: same sequence numbers).
+  /** Frames sent again because nothing came back. Callers may reset it. */
+  resent = 0;
+  private last?: Uint8Array;
+  private again = 0;
+  private timer?: ReturnType<typeof setTimeout>;
 
   /**
    * chunkSize: Web Bluetooth has no requestMtu; the browser negotiates the ATT MTU itself.
@@ -70,6 +80,7 @@ export class BleTransport implements Transport {
       if (!dv) return;
       for (const f of this.re.feed(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength))) {
         recordFrame('rx', f); // whole reassembled frame; read-only tee
+        clearTimeout(this.timer); // the meter answered: nothing to send again
         this.cb(f);
       }
     });
@@ -79,8 +90,30 @@ export class BleTransport implements Transport {
     this.cb = cb;
   }
 
+  /** Call `cb` once when the radio link drops (also fires for our own disconnect()). */
+  onLost(cb: () => void): void {
+    this.server.device.addEventListener('gattserverdisconnected', cb, { once: true });
+  }
+
   async write(b: Uint8Array): Promise<void> {
     recordFrame('tx', b); // whole frame, before chunking
+    this.last = b;
+    this.again = 0;
+    await this.send(b);
+    this.arm();
+  }
+
+  private arm(): void {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      if (!this.last || this.again >= MAX_RESENDS || !this.server.connected) return;
+      this.again++; this.resent++;
+      recordFrame('tx', this.last);
+      this.send(this.last).then(() => this.arm(), () => { /* link gone: onLost reports it */ });
+    }, RESEND_MS);
+  }
+
+  private async send(b: Uint8Array): Promise<void> {
     const noResp = this.writeChar.properties.writeWithoutResponse;
     const parts = chunk(b, this.chunkSize);
     for (const [i, p] of parts.entries()) {
@@ -92,18 +125,20 @@ export class BleTransport implements Transport {
   }
 
   disconnect(): void {
+    clearTimeout(this.timer);
+    this.last = undefined;
     if (this.server.connected) this.server.disconnect();
   }
 }
 
-/** Chooser-based connect (cannot target a MAC; Web Bluetooth hides it). Returns the transport and the device's
- *  advertised name (usually the serial), which labels an off-list meter. Glue: field-verified, not run in CI. */
 /** Names a meter may advertise, given its serial or list name. Field run 2026-11-19: serial 6500567727 advertised
  *  as "RE6500567727", so a bare number is also tried with the RE prefix. */
 export function advertisedNames(names: string[]): string[] {
   return [...new Set(names.flatMap((n) => (/^\d+$/.test(n) ? [n, `RE${n}`] : [n])))];
 }
 
+/** Chooser-based connect (cannot target a MAC; Web Bluetooth hides it). Returns the transport and the device's
+ *  advertised name (usually the serial), which labels an off-list meter. Glue: field-verified, not run in CI. */
 export async function connectMeter(chunkSize?: number, names: string[] = []): Promise<{ transport: BleTransport; name: string }> {
   const device = await navigator.bluetooth.requestDevice({
     // `names` narrows the chooser to one meter by its advertised name; empty lists every meter
