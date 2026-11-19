@@ -84,6 +84,9 @@ export class BleTransport implements Transport {
         this.cb(f);
       }
     });
+    // A dropped link ends this transport for good. `server` is the device's one GATT object and reads "connected"
+    // again after a reconnect, so without this a pending resend would fire into the next session.
+    this.onLost(() => { clearTimeout(this.timer); this.last = undefined; });
   }
 
   onData(cb: (b: Uint8Array) => void): void {
@@ -139,12 +142,18 @@ export function advertisedNames(names: string[]): string[] {
 
 /** Chooser-based connect (cannot target a MAC; Web Bluetooth hides it). Returns the transport and the device's
  *  advertised name (usually the serial), which labels an off-list meter. Glue: field-verified, not run in CI. */
-export async function connectMeter(chunkSize?: number, names: string[] = []): Promise<{ transport: BleTransport; name: string }> {
+export async function connectMeter(chunkSize?: number, names: string[] = []): Promise<{ transport: BleTransport; name: string; reopen: () => Promise<BleTransport> }> {
   const device = await navigator.bluetooth.requestDevice({
     // `names` narrows the chooser to one meter by its advertised name; empty lists every meter
     filters: names.length ? advertisedNames(names).map((name) => ({ name })) : SERVICE_UUIDS.map((s) => ({ services: [s] })),
     optionalServices: SERVICE_UUIDS,
   });
+  // reopen: a new link to the same device with no chooser (field run 2026-11-19: Bluefy reconnects in about 1 s)
+  const reopen = () => openTransport(device, chunkSize);
+  return { transport: await reopen(), name: device.name ?? '', reopen };
+}
+
+async function openTransport(device: BluetoothDevice, chunkSize?: number): Promise<BleTransport> {
   if (!device.gatt) throw new Error('device has no GATT');
   const server = await device.gatt.connect();
   let chars: BluetoothRemoteGATTCharacteristic[] = [];
@@ -164,5 +173,5 @@ export async function connectMeter(chunkSize?: number, names: string[] = []): Pr
     throw new Error('write/notify characteristics not found');
   }
   await notifyChar.startNotifications();
-  return { transport: new BleTransport(server, writeChar, notifyChar, chunkSize), name: device.name ?? '' };
+  return new BleTransport(server, writeChar, notifyChar, chunkSize);
 }

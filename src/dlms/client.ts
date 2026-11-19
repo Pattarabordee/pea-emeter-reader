@@ -8,19 +8,51 @@ import type { DlmsData } from './types';
 export interface Transport {
   write(b: Uint8Array): Promise<void>;
   onData(cb: (b: Uint8Array) => void): void;
+  /** Optional: call `cb` when the link under this transport is gone. */
+  onLost?(cb: () => void): void;
 }
 
 const LLC_TX = [0xe6, 0xe6, 0x00]; // client -> meter
 const LLC_RX = [0xe6, 0xe7, 0x00]; // meter -> client
+const MAX_RECONNECTS = 3;
+const RECONNECT_TIMEOUT_MS = 10000;
 
 export class DlmsClient {
-  private readonly session: HdlcSession;
-  private readonly queue: Array<HdlcEvent | Error> = [];
+  private session: HdlcSession;
+  private queue: Array<HdlcEvent | Error> = [];
   private waiter?: { resolve: (e: HdlcEvent) => void; reject: (e: Error) => void };
+  private lost = false;
 
-  constructor(private readonly t: Transport, private readonly o: { clientAddr: number; serverAddr: number; password: Uint8Array }) {
+  /** `reopen` (optional) brings up a fresh link to the same meter. With it, a GET that dies because the link
+   *  dropped reconnects, associates again and is asked again. Field run 2026-11-19: with a weak signal the link
+   *  dropped within about 2 s, while reconnecting took about 1 s. */
+  constructor(private t: Transport, private readonly o: { clientAddr: number; serverAddr: number; password: Uint8Array; reopen?: () => Promise<Transport> }) {
     this.session = new HdlcSession(o.clientAddr, o.serverAddr);
-    t.onData((b) => this.handleFrame(b));
+    this.bind(t);
+  }
+
+  private bind(t: Transport): void {
+    t.onData((b) => { if (t === this.t) this.handleFrame(b); }); // a replaced transport may still deliver: ignore it
+    t.onLost?.(() => {
+      if (t !== this.t) return;
+      this.lost = true;
+      this.push(new Error('link lost'));
+    });
+  }
+
+  private async reconnect(): Promise<void> {
+    const reopen = this.o.reopen!;
+    const t = await Promise.race([
+      reopen(),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('reconnect: no link in 10s')), RECONNECT_TIMEOUT_MS)),
+    ]);
+    this.t = t;
+    this.session = new HdlcSession(this.o.clientAddr, this.o.serverAddr);
+    this.queue = [];
+    this.waiter = undefined;
+    this.lost = false;
+    this.bind(t);
+    await this.associate();
   }
 
   // Events are queued, so a transport that delivers synchronously inside write() works too.
@@ -83,6 +115,20 @@ export class DlmsClient {
   }
 
   async get(classId: number, obis: string, attr: number, access?: SelectiveAccess): Promise<DlmsData> {
+    let err: unknown;
+    for (let attempt = 0; attempt <= MAX_RECONNECTS; attempt++) {
+      try {
+        if (this.lost && this.o.reopen) await this.reconnect();
+        return await this.getOnce(classId, obis, attr, access);
+      } catch (e) {
+        err = e;
+        if (!this.lost || !this.o.reopen) throw e; // a refusal or a decode error: reconnecting would not help
+      }
+    }
+    throw err;
+  }
+
+  private async getOnce(classId: number, obis: string, attr: number, access?: SelectiveAccess): Promise<DlmsData> {
     let resp = parseGetResponse(await this.request(buildGetNormal(classId, obisToBytes(obis), attr, access)));
     if ('data' in resp) return decodeData(new ByteReader(resp.data));
     // Block transfer: concatenate every block's raw bytes, decode once at the end.

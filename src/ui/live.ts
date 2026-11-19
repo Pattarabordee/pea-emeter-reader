@@ -154,7 +154,7 @@ export function mountLive(root: HTMLElement): void {
     try {
       const names = listed && !offList.checked && !noFilter.has(listed.mac)
         ? [...new Set([listed.name, serials.get(listed.mac)].filter((s): s is string => !!s))] : [];
-      const { transport, name } = await connectMeter(undefined, names).catch((e) => { // first await after the click keeps the user gesture
+      const { transport, name, reopen } = await connectMeter(undefined, names).catch((e) => { // first await after the click keeps the user gesture
         if (!names.length || (e as Error).name !== 'NotFoundError') throw e;
         noFilter.add(listed!.mac);
         throw new Error(`ไม่ได้เลือก ${names.join(' / ')}: ถ้ารายการว่าง กด Connect อีกครั้งเพื่อแสดงมิเตอร์ทั้งหมด`);
@@ -162,11 +162,20 @@ export function mountLive(root: HTMLElement): void {
       // Off-list meter has no MAC (Web Bluetooth hides it); label it by the advertised name and don't persist the password.
       const m: MeterEntry = listed && !offList.checked ? listed
         : { name: name || 'มิเตอร์นอกรายชื่อ', mac: '', password: pw.value, type: Number(typeSel.value) as 1 | 3, descriptor: 'นอกรายชื่อ (สแกน)' };
-      const client = new DlmsClient(transport, { clientAddr: 32, serverAddr: 1, password: new TextEncoder().encode(pw.value) });
+      // When the link drops mid-read the client reconnects through this (no chooser) and asks again; every screen
+      // shares this client, so Billing/Load/PQ reads recover the same way. Not after Stop: end() clears `session`.
+      const client: DlmsClient = new DlmsClient(transport, {
+        clientAddr: 32, serverAddr: 1, password: new TextEncoder().encode(pw.value),
+        reopen: async () => {
+          if (session?.client !== client) throw new Error('stopped');
+          status.textContent = 'Bluetooth หลุด กำลังต่อใหม่…';
+          const t = await reopen();
+          if (session?.client !== client) { t.disconnect(); throw new Error('stopped'); }
+          session.transport = t;
+          return t;
+        },
+      });
       session = { transport, client };
-      // Fail at once when the link drops, instead of waiting out a 30 s read. end() clears `session` before it
-      // disconnects, so our own disconnect does not land here.
-      transport.onLost(() => { if (session?.transport === transport) void end('Bluetooth หลุด: เข้าใกล้มิเตอร์แล้วกด Connect ใหม่'); });
       await withTimeout(client.associate(), 'associate');
       shared.client = client; shared.meter = m;
       if (m.mac) await setPassword(m.mac, pw.value); // only a password that worked is persisted; off-list has no stable key

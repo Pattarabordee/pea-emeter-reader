@@ -65,6 +65,30 @@ describe.each([[true], [false]])('DlmsClient (sync delivery=%s)', (sync) => {
     await expect(new DlmsClient(t, opts).associate([{ conformance: 0x001e1d, maxPdu: 0x0400 }])).rejects.toThrow(/authentication-failure/);
   });
 
+  it('reconnects, associates again and repeats the GET when the link drops mid-read', async () => {
+    const a = fakeMeter(['UA', info(AARE_OK)], sync); // the GET (third write) gets no reply
+    let lostA = () => {};
+    a.t.onLost = (cb) => { lostA = cb; };
+    const write = a.t.write;
+    a.t.write = async (b) => { await write(b); if (a.writes.length === 3) setTimeout(lostA, 0); };
+    const b = fakeMeter(['UA', info(AARE_OK), info([0xc4, 1, 0xc1, 0, 0x06, 0, 0, 0x01, 0x2c])], sync);
+    let reopens = 0;
+    const c = new DlmsClient(a.t, { ...opts, reopen: async () => { reopens++; return b.t; } });
+    await c.associate();
+    expect(await c.get(3, '1.0.12.7.0.255', 2)).toEqual({ t: 'u32', v: 300 });
+    expect(reopens).toBe(1);
+    expect(b.writes).toHaveLength(3); // SNRM, AARQ, the GET again
+  });
+
+  it('does not reconnect for a refusal by the meter', async () => {
+    const { t } = fakeMeter(['UA', info(AARE_OK), info([0xc4, 1, 0xc1, 1, 4])], sync);
+    let reopens = 0;
+    const c = new DlmsClient(t, { ...opts, reopen: async () => { reopens++; return t; } });
+    await c.associate();
+    await expect(c.get(3, '1.0.12.7.0.255', 2)).rejects.toThrow(/data-access-result/);
+    expect(reopens).toBe(0);
+  });
+
   it('throws when the AARE is rejected', async () => {
     const rej = hexb('6117a109060760857405080101a203020101a305a10302010d');
     const { t } = fakeMeter(['UA', info(rej)], sync);
