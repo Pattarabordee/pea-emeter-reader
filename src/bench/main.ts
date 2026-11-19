@@ -9,6 +9,9 @@ import { getCaptureObjects, getEntriesInUse } from '../dlms/profile';
 import { RadioHead, advStats } from '../ble/radioHead';
 import { BleTransport } from '../ble/transport';
 import { SERVICE_UUIDS } from '../ble/uuids';
+import { getPassword, listMeters } from '../store/db';
+import { normMac } from '../store/places';
+import { mountMap } from '../ui/map';
 
 const BILLING = '1.0.98.1.0.255';
 const LOAD = '1.0.99.1.0.255';
@@ -45,13 +48,38 @@ const bSave = h('button', 'ดาวน์โหลดผล (JSON)', { disabled
 const summary = h('p');
 const table = h('table');
 const lab = (text: string, el: HTMLElement) => { const l = h('label', text + ' '); l.append(el); return l; };
-root.append(
-  status, pw, lab('รอบต่อค่า', repeats),
-  h('h2', 'ก. จากโทรศัพท์หรือคอมพิวเตอร์โดยตรง (ไม่ใช้หัววิทยุ)'),
-  lab('ขนาดก้อนเขียนที่ทดสอบ (ไบต์)', chunks), bPhone,
+// The map and the stored meter list are the main app's (same origin, same IndexedDB): tapping a meter fills the
+// password, and the MAC for the radio head. Web Bluetooth still shows its own chooser; it cannot be given a MAC.
+const mapSec = h('details');
+const mapBody = h('div');
+mapSec.append(h('summary', 'เลือกมิเตอร์จากแผนที่ (เติมรหัสผ่านให้เอง)'), mapBody);
+const showMap = mountMap(mapBody, (p) => {
+  const label = p.serial || p.mac;
+  void (async () => {
+    const m = (await listMeters()).find((x) => normMac(x.mac) === normMac(p.mac));
+    mac.value = normMac(p.mac).toLowerCase().match(/../g)!.join(':');
+    pw.value = m ? ((await getPassword(m.mac)) ?? '') : '';
+    status.textContent = pw.value
+      ? `เลือก ${label} แล้ว เติมรหัสผ่านให้แล้ว กดปุ่มรัน แล้วเลือกชื่อ ${m!.name} ในหน้าต่าง Bluetooth`
+      : `${label} ไม่มีรหัสผ่านในเครื่องนี้: โหลดไฟล์รายชื่อมิเตอร์ (.txt) ที่หน้าหลักก่อน หรือพิมพ์รหัสผ่านเอง`;
+    mapSec.open = false;
+    status.scrollIntoView();
+  })().catch((e) => { status.textContent = `เปิดรายชื่อมิเตอร์ไม่ได้: ${(e as Error).message}`; });
+  return '';
+});
+mapSec.ontoggle = () => { if (mapSec.open) showMap(); };
+// A phone has no Web Serial, so the radio-head section (the only one that needs a MAC) is not shown there.
+const radioSec = h('div', '', { hidden: !('serial' in navigator) });
+radioSec.append(
   h('h2', 'ข. ผ่านหัววิทยุ XIAO (USB)'), bConnect, lab('ใช้เสานอก (u.FL)', ant), h('br'), bScan, scanBox,
   mac, addrType, h('br'),
   lab('interval ที่ทดสอบ (×1.25 ms)', itvls), lab('ขอ 2M PHY', phy2m), h('br'), bRun,
+);
+root.append(
+  status, mapSec, pw, lab('รอบต่อค่า', repeats),
+  h('h2', 'ก. จากโทรศัพท์หรือคอมพิวเตอร์โดยตรง (ไม่ใช้หัววิทยุ)'),
+  lab('ขนาดก้อนเขียนที่ทดสอบ (ไบต์)', chunks), bPhone,
+  radioSec,
   h('h2', 'ผล'), bSave, summary, table,
 );
 
