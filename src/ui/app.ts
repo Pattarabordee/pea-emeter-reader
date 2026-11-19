@@ -55,7 +55,11 @@ export function mountApp(root: HTMLElement): void {
   const clr = el('button', '', 'ล้าง frames');
   clr.addEventListener('click', clearFrames);
   adv.append(el('summary', '', 'ขั้นสูง (debug)'), cbLabel, dl, clr);
-  live.append(adv);
+  const bench = el('a', '', 'หน้าทดสอบ T1 (จับเวลาอ่านมิเตอร์)');
+  bench.href = 'bench.html'; // relative, so it follows the Pages base path
+  const benchP = el('p');
+  benchP.append(bench);
+  live.append(adv, benchP);
 
   // Billing/Load/PQ click the profile tab buttons mountProfiles renders (first div of the section), in that order.
   const profileBtns = () => stored.querySelectorAll<HTMLButtonElement>('div > button');
