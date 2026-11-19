@@ -59,6 +59,7 @@ const showMap = mountMap(mapBody, (p) => {
     const m = (await listMeters()).find((x) => normMac(x.mac) === normMac(p.mac));
     mac.value = normMac(p.mac).toLowerCase().match(/../g)!.join(':');
     pw.value = m ? ((await getPassword(m.mac)) ?? '') : '';
+    pw.hidden = !!pw.value; // filled from the stored list: nothing to type
     status.textContent = pw.value
       ? `เลือก ${label} แล้ว เติมรหัสผ่านให้แล้ว กดปุ่มรัน แล้วเลือกชื่อ ${m!.name} ในหน้าต่าง Bluetooth`
       : `${label} ไม่มีรหัสผ่านในเครื่องนี้: โหลดไฟล์รายชื่อมิเตอร์ (.txt) ที่หน้าหลักก่อน หรือพิมพ์รหัสผ่านเอง`;
@@ -242,7 +243,7 @@ async function runPasses(btn: HTMLButtonElement, list: number[], cfg: (n: number
       const add: Add = (step, ms, bytes = 0, note = '') => { rows.push({ pass: p, cfg: cfg(n), step, ms, bytes, note }); render(); };
       status.textContent = `รอบ ${p}: ${cfg(n)}…`;
       try { await one(add, n); }
-      catch (e) { add('ยกเลิกรอบ', 0, 0, `ผิดพลาด: ${(e as Error).message}`); }
+      catch (e) { add('ยกเลิกรอบ', 0, 0, `ผิดพลาด: ${(e as Error).message}`); pw.hidden = false; } // the stored password may be wrong: let it be retyped
       try { await drop(); } catch { /* already gone */ }
       await sleep(2000); // let the meter go back to advertising
     }
