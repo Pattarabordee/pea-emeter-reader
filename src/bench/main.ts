@@ -53,6 +53,7 @@ const lab = (text: string, el: HTMLElement) => { const l = h('label', text + ' '
 const mapSec = h('details');
 const mapBody = h('div');
 mapSec.append(h('summary', 'เลือกมิเตอร์จากแผนที่ (เติมรหัสผ่านให้เอง)'), mapBody);
+let wantNames: string[] = []; // names of the meter picked on the map: the Bluetooth chooser is narrowed to them
 const showMap = mountMap(mapBody, (p) => {
   const label = p.serial || p.mac;
   void (async () => {
@@ -60,6 +61,8 @@ const showMap = mountMap(mapBody, (p) => {
     mac.value = normMac(p.mac).toLowerCase().match(/../g)!.join(':');
     pw.value = m ? ((await getPassword(m.mac)) ?? '') : '';
     pw.hidden = !!pw.value; // filled from the stored list: nothing to type
+    // The meter advertises its name; the list's name and the GIS serial are the two candidates for it.
+    wantNames = [...new Set([m?.name, p.serial].filter((s): s is string => !!s))];
     status.textContent = pw.value
       ? `เลือก ${label} แล้ว เติมรหัสผ่านให้แล้ว กดปุ่มรัน แล้วเลือกชื่อ ${m!.name} ในหน้าต่าง Bluetooth`
       : `${label} ไม่มีรหัสผ่านในเครื่องนี้: โหลดไฟล์รายชื่อมิเตอร์ (.txt) ที่หน้าหลักก่อน หรือพิมพ์รหัสผ่านเอง`;
@@ -266,7 +269,19 @@ bPhone.onclick = async () => {
   if (!pw.value) { status.textContent = 'ใส่รหัสผ่านก่อน'; return; }
   if (!('bluetooth' in navigator)) { status.textContent = 'เบราว์เซอร์นี้ไม่มี Web Bluetooth: บน iPhone ให้เปิดหน้านี้ในแอป Bluefy'; return; }
   try {
-    const dev = await navigator.bluetooth.requestDevice({ filters: SERVICE_UUIDS.map((s) => ({ services: [s] })), optionalServices: SERVICE_UUIDS });
+    const names = wantNames;
+    wantNames = []; // one try only: if the name does not match what the meter advertises, the next press lists every meter
+    let dev: BluetoothDevice;
+    try {
+      dev = await navigator.bluetooth.requestDevice({
+        filters: names.length ? names.map((name) => ({ name })) : SERVICE_UUIDS.map((s) => ({ services: [s] })),
+        optionalServices: SERVICE_UUIDS,
+      });
+    } catch (e) {
+      if (!names.length) throw e;
+      status.textContent = `ไม่ได้เลือก ${names.join(' / ')}: ถ้ารายการว่าง กดปุ่มอีกครั้งเพื่อแสดงมิเตอร์ทั้งหมด`;
+      return;
+    }
     if (!dev.gatt) throw new Error('device has no GATT');
     const password = new TextEncoder().encode(pw.value);
     meter = dev.name ?? '';
