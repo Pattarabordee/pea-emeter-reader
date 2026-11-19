@@ -59,13 +59,13 @@ const showMap = mountMap(mapBody, (p) => {
   void (async () => {
     const m = (await listMeters()).find((x) => normMac(x.mac) === normMac(p.mac));
     mac.value = normMac(p.mac).toLowerCase().match(/../g)!.join(':');
-    pw.value = m ? ((await getPassword(m.mac)) ?? '') : '';
+    pw.value = (await getPassword(m?.mac ?? p.mac)) ?? ''; // falls back to the common password
     pw.hidden = !!pw.value; // filled from the stored list: nothing to type
     // The meter advertises its name; the list's name and the GIS serial are the two candidates for it.
     wantNames = [...new Set([m?.name, p.serial].filter((s): s is string => !!s))];
     status.textContent = pw.value
-      ? `เลือก ${label} แล้ว เติมรหัสผ่านให้แล้ว กดปุ่มรัน แล้วเลือกชื่อ ${m!.name} ในหน้าต่าง Bluetooth`
-      : `${label} ไม่มีรหัสผ่านในเครื่องนี้: โหลดไฟล์รายชื่อมิเตอร์ (.txt) ที่หน้าหลักก่อน หรือพิมพ์รหัสผ่านเอง`;
+      ? `เลือก ${label} แล้ว เติมรหัสผ่านให้แล้ว กดปุ่มรัน แล้วเลือกชื่อ ${m?.name ?? label} ในหน้าต่าง Bluetooth`
+      : `เลือก ${label} แล้ว ยังไม่มีรหัสผ่านในเครื่องนี้: วางรหัสผ่านในช่องด้านล่าง`;
     mapSec.open = false;
     status.scrollIntoView();
   })().catch((e) => { status.textContent = `เปิดรายชื่อมิเตอร์ไม่ได้: ${(e as Error).message}`; });
@@ -258,6 +258,7 @@ async function runPasses(btn: HTMLButtonElement, list: number[], cfg: (n: number
 
 bRun.onclick = () => {
   const r = radio;
+  pw.value = pw.value.trim();
   if (!r || !mac.value.trim() || !pw.value) { status.textContent = 'ใส่ MAC และรหัสผ่านก่อน'; return; }
   const password = new TextEncoder().encode(pw.value);
   meter = mac.value.trim();
@@ -266,7 +267,8 @@ bRun.onclick = () => {
 };
 
 bPhone.onclick = async () => {
-  if (!pw.value) { status.textContent = 'ใส่รหัสผ่านก่อน'; return; }
+  pw.value = pw.value.trim(); // a pasted password often carries a trailing space or newline
+  if (!pw.value) { pw.hidden = false; status.textContent = 'ใส่รหัสผ่านก่อน'; return; }
   if (!('bluetooth' in navigator)) { status.textContent = 'เบราว์เซอร์นี้ไม่มี Web Bluetooth: บน iPhone ให้เปิดหน้านี้ในแอป Bluefy'; return; }
   try {
     const names = wantNames;

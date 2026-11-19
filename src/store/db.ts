@@ -99,7 +99,11 @@ export async function setPassword(mac: string, pw: string): Promise<void> {
   await (await db()).put('passwords', pw, mac);
 }
 
+/** Key in `passwords` for the last password that worked on any meter: the fallback for a meter with none of its own
+ *  (in the field every meter shares one password). */
+export const COMMON = '*';
+
 export async function getPassword(mac: string): Promise<string | undefined> {
   const d = await db();
-  return (await d.get('passwords', mac)) ?? (await d.get('meters', mac))?.password;
+  return (await d.get('passwords', mac)) || (await d.get('meters', mac))?.password || (await d.get('passwords', COMMON));
 }

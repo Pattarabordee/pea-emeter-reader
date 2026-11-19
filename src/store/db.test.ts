@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
-import { deleteRead, getPassword, listMeters, listPlaces, listReads, saveMeters, savePlaces, saveRead, setPassword } from './db';
+import { COMMON, deleteRead, getPassword, listMeters, listPlaces, listReads, saveMeters, savePlaces, saveRead, setPassword } from './db';
 
 const m = { name: 'A B', mac: 'AA:BB:CC:DD:EE:FF', password: '00000000', type: 1 as const, descriptor: 'd' };
 
@@ -31,6 +31,10 @@ describe('db', () => {
   });
   it('import password is the default when no override', async () => {
     await saveMeters([{ ...m, mac: '11:11:11:11:11:11', password: 'imp' }]);
+    expect(await getPassword('11:11:11:11:11:11')).toBe('imp');
+    // the common password fills in only where a meter has none of its own
+    await setPassword(COMMON, 'fake-common');
+    expect(await getPassword('22:22:22:22:22:22')).toBe('fake-common');
     expect(await getPassword('11:11:11:11:11:11')).toBe('imp');
   });
 });

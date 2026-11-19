@@ -3,7 +3,7 @@ import { connectMeter, type BleTransport } from '../ble/transport';
 import { readLive } from '../profiles/live';
 import type { Reading } from '../profiles/templates';
 import { parseMeterList, type MeterEntry } from '../store/meterList';
-import { getPassword, listMeters, saveMeters, setPassword } from '../store/db';
+import { COMMON, getPassword, listMeters, saveMeters, setPassword } from '../store/db';
 import { normMac } from '../store/places';
 import { readPicked } from './readFile';
 import { renderDashboard } from './dashboard';
@@ -46,7 +46,7 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElemen
 /** The one connected link, shared with the stored-data screens. `busy` serialises GETs: the Live poll skips a tick while a profile read runs. */
 export const shared: {
   client?: DlmsClient; meter?: MeterEntry; busy: boolean; end?: (msg: string) => Promise<void>;
-  pick?: (mac: string, label: string) => boolean; // select a meter by MAC (from the map); false when it isn't in the imported list
+  pick?: (mac: string, label: string, phase?: string) => boolean; // select a meter by MAC (from the map), adding it when it isn't in the imported list
 } = { busy: false };
 
 /** Glue (Web Bluetooth + interval): field-verified, not unit-tested. */
@@ -70,8 +70,7 @@ export function mountLive(root: HTMLElement): void {
   offList.onchange = () => {
     typeRow.hidden = !offList.checked;
     picker.hidden = offList.checked;
-    if (offList.checked) { pw.value = ''; pw.hidden = false; }
-    else void loadPw();
+    void loadPw();
   };
 
   let meters: MeterEntry[] = [];
@@ -86,7 +85,12 @@ export function mountLive(root: HTMLElement): void {
     await loadPw();
   };
   // A stored password needs no typing: the box is hidden until a connect fails (the stored one may be wrong).
-  const loadPw = async () => { const m = current(); pw.value = m ? ((await getPassword(m.mac)) ?? '') : ''; pw.hidden = !!pw.value && !offList.checked; };
+  // An off-list meter has no key of its own: it gets the common password (the last one that worked).
+  const loadPw = async () => {
+    const m = offList.checked ? undefined : current();
+    pw.value = (await getPassword(m?.mac ?? COMMON)) ?? '';
+    pw.hidden = !!pw.value;
+  };
   picker.onchange = () => void loadPw();
   file.onchange = async () => {
     const f = file.files?.[0];
@@ -124,9 +128,14 @@ export function mountLive(root: HTMLElement): void {
   };
 
   shared.end = end; // lets other screens drop a possibly desynced session
-  shared.pick = (mac, label) => {
-    const m = meters.find((x) => normMac(x.mac) === normMac(mac));
-    if (!m) return false;
+  shared.pick = (mac, label, phase = '') => {
+    let m = meters.find((x) => normMac(x.mac) === normMac(mac));
+    if (!m) { // not in the .txt list: usable for this visit, with the common password or one typed in
+      m = { name: label, mac, password: '', type: phase.startsWith('3') ? 3 : 1, descriptor: 'จากแผนที่' };
+      meters.push(m);
+      picker.append(Object.assign(h('option', `${m.name} (${m.mac})`), { value: m.mac }));
+    }
+    offList.checked = false; typeRow.hidden = true; picker.hidden = false;
     picker.value = m.mac;
     serials.set(m.mac, label);
     void loadPw();
@@ -138,7 +147,8 @@ export function mountLive(root: HTMLElement): void {
   connect.onclick = async () => {
     const listed = current();
     if (!offList.checked && !listed) { status.textContent = 'นำเข้าไฟล์รายชื่อแล้วเลือกมิเตอร์ก่อน หรือติ๊ก "มิเตอร์นอกรายชื่อ"'; return; }
-    if (offList.checked && !pw.value) { status.textContent = 'ใส่รหัสผ่านมิเตอร์ก่อน'; return; }
+    pw.value = pw.value.trim(); // a pasted password often carries a trailing space or newline
+    if (!pw.value) { pw.hidden = false; status.textContent = 'ใส่รหัสผ่านมิเตอร์ก่อน'; return; }
     connect.disabled = true; stop.disabled = false;
     status.textContent = 'กำลังเชื่อมต่อ… เลือกมิเตอร์ในหน้าต่าง Bluetooth';
     try {
@@ -157,6 +167,7 @@ export function mountLive(root: HTMLElement): void {
       await withTimeout(client.associate(), 'associate');
       shared.client = client; shared.meter = m;
       if (m.mac) await setPassword(m.mac, pw.value); // only a password that worked is persisted; off-list has no stable key
+      await setPassword(COMMON, pw.value);
       const tick = async () => {
         if (shared.busy || !session) return;
         shared.busy = true;

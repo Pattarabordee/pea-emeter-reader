@@ -39,7 +39,7 @@ export function mountApp(root: HTMLElement): void {
   const show = (s: HTMLElement) => { for (const x of [live, mapSec, hist, stored]) x.hidden = x !== s; };
   const showMap = mountMap(mapSec, (p) => {
     if (!shared.pick) return 'เบราว์เซอร์นี้ใช้ Bluetooth ไม่ได้ — ใช้ Chrome บน Android หรือ Windows';
-    if (!shared.pick(p.mac, p.serial || p.mac)) return `${p.serial || p.mac} ไม่มีในไฟล์รายชื่อมิเตอร์ (.txt) จึงไม่มีรหัสผ่าน — โหลดไฟล์รายชื่อที่หน้า Live ก่อน`;
+    shared.pick(p.mac, p.serial || p.mac, p.phase);
     selectTab(0);
     return '';
   });
