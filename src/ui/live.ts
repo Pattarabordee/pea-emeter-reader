@@ -70,7 +70,7 @@ export function mountLive(root: HTMLElement): void {
   offList.onchange = () => {
     typeRow.hidden = !offList.checked;
     picker.hidden = offList.checked;
-    if (offList.checked) pw.value = '';
+    if (offList.checked) { pw.value = ''; pw.hidden = false; }
     else void loadPw();
   };
 
@@ -85,7 +85,8 @@ export function mountLive(root: HTMLElement): void {
     picker.replaceChildren(...meters.map((m) => Object.assign(h('option', `${m.name} (${m.mac}) — pick this in the Bluetooth chooser`), { value: m.mac })));
     await loadPw();
   };
-  const loadPw = async () => { const m = current(); pw.value = m ? ((await getPassword(m.mac)) ?? '') : ''; };
+  // A stored password needs no typing: the box is hidden until a connect fails (the stored one may be wrong).
+  const loadPw = async () => { const m = current(); pw.value = m ? ((await getPassword(m.mac)) ?? '') : ''; pw.hidden = !!pw.value && !offList.checked; };
   picker.onchange = () => void loadPw();
   file.onchange = async () => {
     const f = file.files?.[0];
@@ -169,6 +170,7 @@ export function mountLive(root: HTMLElement): void {
       await tick();
       if (session) timer = setInterval(() => void tick(), INTERVAL_MS);
     } catch (e) {
+      pw.hidden = false;
       await end(`Error: ${(e as Error).message}`);
     }
   };
