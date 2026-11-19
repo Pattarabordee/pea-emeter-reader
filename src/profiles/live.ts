@@ -84,8 +84,8 @@ export async function readLive(client: DlmsClient, type: 1 | 3): Promise<Reading
       const raw = num(await client.get(3, s.obis, 2));
       const scaler = pickScaler(s.key, raw, su.scaler);
       out.push({ ...base, unit: su.unit, scaler, raw, value: scale(raw, scaler), missing: false });
-    } catch {
-      out.push({ ...base, raw: null, value: null, missing: true });
+    } catch (e) {
+      out.push({ ...base, raw: null, value: null, missing: true, error: (e as Error).message });
     }
   }
   crossCheckCurrent(out);

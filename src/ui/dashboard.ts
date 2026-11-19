@@ -103,5 +103,7 @@ export function renderDashboard(el: HTMLElement, readings: Reading[]): void {
     kpis.append(tile(t.icon, t.label, tv, u));
   }
   dash.append(hero, kpis);
+  // why a value shows as a dash: the meter's refusal or the read error, per register
+  for (const r of readings) if (r.missing && r.error) dash.append(div('status', `อ่านไม่ได้ ${r.key} (${r.obis}): ${r.error}`));
   el.replaceChildren(dash);
 }
