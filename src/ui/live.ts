@@ -171,6 +171,7 @@ export function mountLive(root: HTMLElement): void {
       shared.client = client; shared.meter = m;
       if (m.mac) await setPassword(m.mac, pw.value); // only a password that worked is persisted; off-list has no stable key
       await setPassword(COMMON, pw.value);
+      pw.hidden = true; // it worked: nothing to retype (an earlier failed try may have shown the box)
       const tick = async () => {
         if (shared.busy || !session) return;
         shared.busy = true;
