@@ -75,6 +75,10 @@ export function mountLive(root: HTMLElement): void {
   };
 
   let meters: MeterEntry[] = [];
+  // The Bluetooth chooser is narrowed to the selected meter by advertised name: the list's name, or the GIS serial
+  // when it was picked on the map. A meter whose names matched nothing goes in noFilter and gets the full list next time.
+  const serials = new Map<string, string>();
+  const noFilter = new Set<string>();
   const current = () => meters.find((m) => m.mac === picker.value);
   const refreshList = async () => {
     meters = await listMeters();
@@ -123,6 +127,7 @@ export function mountLive(root: HTMLElement): void {
     const m = meters.find((x) => normMac(x.mac) === normMac(mac));
     if (!m) return false;
     picker.value = m.mac;
+    serials.set(m.mac, label);
     void loadPw();
     status.textContent = `เลือก ${label} แล้ว กด Connect แล้วเลือกชื่อ ${m.name} ในหน้าต่าง Bluetooth`;
     return true;
@@ -136,7 +141,13 @@ export function mountLive(root: HTMLElement): void {
     connect.disabled = true; stop.disabled = false;
     status.textContent = 'กำลังเชื่อมต่อ… เลือกมิเตอร์ในหน้าต่าง Bluetooth';
     try {
-      const { transport, name } = await connectMeter(); // first await after the click keeps the user gesture
+      const names = listed && !offList.checked && !noFilter.has(listed.mac)
+        ? [...new Set([listed.name, serials.get(listed.mac)].filter((s): s is string => !!s))] : [];
+      const { transport, name } = await connectMeter(undefined, names).catch((e) => { // first await after the click keeps the user gesture
+        if (!names.length || (e as Error).name !== 'NotFoundError') throw e;
+        noFilter.add(listed!.mac);
+        throw new Error(`ไม่ได้เลือก ${names.join(' / ')}: ถ้ารายการว่าง กด Connect อีกครั้งเพื่อแสดงมิเตอร์ทั้งหมด`);
+      });
       // Off-list meter has no MAC (Web Bluetooth hides it); label it by the advertised name and don't persist the password.
       const m: MeterEntry = listed && !offList.checked ? listed
         : { name: name || 'มิเตอร์นอกรายชื่อ', mac: '', password: pw.value, type: Number(typeSel.value) as 1 | 3, descriptor: 'นอกรายชื่อ (สแกน)' };

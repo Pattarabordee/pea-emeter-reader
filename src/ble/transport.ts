@@ -98,9 +98,10 @@ export class BleTransport implements Transport {
 
 /** Chooser-based connect (cannot target a MAC; Web Bluetooth hides it). Returns the transport and the device's
  *  advertised name (usually the serial), which labels an off-list meter. Glue: field-verified, not run in CI. */
-export async function connectMeter(chunkSize?: number): Promise<{ transport: BleTransport; name: string }> {
+export async function connectMeter(chunkSize?: number, names: string[] = []): Promise<{ transport: BleTransport; name: string }> {
   const device = await navigator.bluetooth.requestDevice({
-    filters: SERVICE_UUIDS.map((s) => ({ services: [s] })),
+    // `names` narrows the chooser to one meter by its advertised name; empty lists every meter
+    filters: names.length ? names.map((name) => ({ name })) : SERVICE_UUIDS.map((s) => ({ services: [s] })),
     optionalServices: SERVICE_UUIDS,
   });
   if (!device.gatt) throw new Error('device has no GATT');
