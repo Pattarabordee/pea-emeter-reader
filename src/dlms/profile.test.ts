@@ -30,11 +30,11 @@ describe('profile', () => {
     expect(await readRowsByEntry(client, BILLING, 1, 3)).toEqual(rows);
     expect(calls[0].classId).toBe(7);
     expect(calls[0].attr).toBe(2);
-    expect(calls[0].access).toEqual({ kind: 'by-entry', fromEntry: 1, toEntry: 3, fromSelectedValue: 0, toSelectedValue: 0 });
-    // pin the encoded request: GET-normal, class 7, obis, attr 2, selector 2, structure{1,3,0,0}
+    expect(calls[0].access).toEqual({ kind: 'by-entry', fromEntry: 1, toEntry: 3, fromSelectedValue: 1, toSelectedValue: 0 });
+    // pin the encoded request: GET-normal, class 7, obis, attr 2, selector 2, structure{1,3,1,0}
     expect(Array.from(buildGetNormal(7, obisToBytes(BILLING), 2, calls[0].access))).toEqual([
       0xc0, 0x01, 0xc1, 0x00, 0x07, 1, 0, 98, 1, 0, 255, 0x02,
-      0x01, 0x02, 0x02, 0x04, 0x06, 0, 0, 0, 1, 0x06, 0, 0, 0, 3, 0x12, 0, 0, 0x12, 0, 0,
+      0x01, 0x02, 0x02, 0x04, 0x06, 0, 0, 0, 1, 0x06, 0, 0, 0, 3, 0x12, 0, 1, 0x12, 0, 0,
     ]);
   });
 

@@ -27,12 +27,13 @@ export async function getCapturePeriod(client: DlmsClient, obis: string): Promis
   return num(await client.get(PROFILE_GENERIC, obis, ATTR_CAPTURE_PERIOD), 'capture_period');
 }
 
-/** fromEntry is 1-based (DLMS entries start at 1). Selected values 0/0 = all columns. */
+/** fromEntry is 1-based (DLMS entries start at 1). Selected values 1/0 = first column through the last.
+ *  Field run 2026-11-19 on two PEA meters: 0/0 returned an empty array, 1/0 the full rows. */
 export async function readRowsByEntry(client: DlmsClient, obis: string, fromEntry: number, count: number): Promise<DlmsData[]> {
   if (!Number.isInteger(fromEntry) || fromEntry < 1) throw new Error(`profile: fromEntry must be >= 1, got ${fromEntry}`);
   if (!Number.isInteger(count) || count < 1) throw new Error(`profile: count must be >= 1, got ${count}`);
   const buf = await client.get(PROFILE_GENERIC, obis, ATTR_BUFFER, {
-    kind: 'by-entry', fromEntry, toEntry: fromEntry + count - 1, fromSelectedValue: 0, toSelectedValue: 0,
+    kind: 'by-entry', fromEntry, toEntry: fromEntry + count - 1, fromSelectedValue: 1, toSelectedValue: 0,
   });
   if (buf.t !== 'array') throw new Error(`profile: buffer of ${obis} is not an array (got ${buf.t})`);
   return buf.v;
