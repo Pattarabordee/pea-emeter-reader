@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { encodeHdlc, decodeHdlc } from '../dlms/hdlc';
-import { chunk, FrameReassembler } from './transport';
+import { advertisedNames, chunk, FrameReassembler } from './transport';
 
 const u = (...n: number[]) => new Uint8Array(n);
+
+describe('advertisedNames', () => {
+  it('adds the RE-prefixed form of a bare serial and keeps other names as they are', () => {
+    expect(advertisedNames(['6500567727'])).toEqual(['6500567727', 'RE6500567727']);
+    expect(advertisedNames(['RE6500567727', '6500567727'])).toEqual(['RE6500567727', '6500567727']);
+    expect(advertisedNames(['Meter A'])).toEqual(['Meter A']);
+  });
+});
 
 describe('chunk', () => {
   it('splits into ordered <=mtu pieces with a short tail', () => {

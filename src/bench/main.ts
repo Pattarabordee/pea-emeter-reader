@@ -7,7 +7,7 @@ import { DlmsClient, type Transport } from '../dlms/client';
 import type { SelectiveAccess } from '../dlms/get';
 import { getCaptureObjects, getEntriesInUse } from '../dlms/profile';
 import { RadioHead, advStats } from '../ble/radioHead';
-import { BleTransport } from '../ble/transport';
+import { BleTransport, advertisedNames } from '../ble/transport';
 import { SERVICE_UUIDS } from '../ble/uuids';
 import { getPassword, listMeters } from '../store/db';
 import { distanceM, normMac } from '../store/places';
@@ -339,7 +339,7 @@ bPhone.onclick = async () => {
     let dev: BluetoothDevice;
     try {
       dev = pickedDev ?? await navigator.bluetooth.requestDevice({
-        filters: names.length ? names.map((name) => ({ name })) : SERVICE_UUIDS.map((s) => ({ services: [s] })),
+        filters: names.length ? advertisedNames(names).map((name) => ({ name })) : SERVICE_UUIDS.map((s) => ({ services: [s] })),
         optionalServices: SERVICE_UUIDS,
       });
       if (target) pickedDev = dev;
