@@ -5,6 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa';
 const BASE = '/pea-emeter-reader/';
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? BASE : '/',
+  // bench.html is the T1 timing test page; a phone can only open it from the published site
+  build: { rollupOptions: { input: ['index.html', 'bench.html'] } },
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
