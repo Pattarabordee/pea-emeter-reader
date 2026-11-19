@@ -10,7 +10,7 @@ import { RadioHead, advStats } from '../ble/radioHead';
 import { BleTransport } from '../ble/transport';
 import { SERVICE_UUIDS } from '../ble/uuids';
 import { getPassword, listMeters } from '../store/db';
-import { normMac } from '../store/places';
+import { distanceM, normMac } from '../store/places';
 import { mountMap } from '../ui/map';
 
 const BILLING = '1.0.98.1.0.255';
@@ -18,7 +18,7 @@ const LOAD = '1.0.99.1.0.255';
 const STEP_TIMEOUT_MS = 20000;
 
 declare const __BUILD__: string; // build time, set in vite.config.ts: tells a cached old page from the current one
-type Row = { pass: number; meter: string; cfg: string; step: string; ms: number; bytes: number; note: string };
+type Row = { pass: number; meter: string; distM: number | null; gpsAccM: number | null; cfg: string; step: string; ms: number; bytes: number; note: string };
 type Add = (step: string, ms: number, bytes?: number, note?: string) => void;
 type Link = { transport: Transport; rx(): number; reset(): void };
 type SerialPort = { open(o: { baudRate: number }): Promise<void>; readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> };
@@ -33,7 +33,8 @@ const root = document.getElementById('app')!;
 const status = h('p', 'ใส่รหัสผ่านมิเตอร์ แล้วเลือกวิธีทดสอบ', { id: 'status' });
 const pw = h('input', '', { type: 'password', placeholder: 'รหัสผ่านมิเตอร์', autocomplete: 'off' });
 const repeats = h('input', '', { type: 'number', value: '3', min: '1', max: '10' });
-const chunks = h('input', '', { value: '20,180', size: 8, title: 'จำนวนไบต์ต่อการเขียนหนึ่งครั้ง' });
+const chunks = h('input', '', { value: '20', // field run 2026-11-19: 20 and 180 gave the same timings
+ size: 8, title: 'จำนวนไบต์ต่อการเขียนหนึ่งครั้ง' });
 const bPhone = h('button', 'เลือกมิเตอร์แล้วรัน T1 จากโทรศัพท์');
 const bConnect = h('button', '1. ต่อหัววิทยุ (USB)');
 const ant = h('input', '', { type: 'checkbox' });
@@ -55,8 +56,28 @@ const mapSec = h('details');
 const mapBody = h('div');
 mapSec.append(h('summary', 'เลือกมิเตอร์จากแผนที่ (เติมรหัสผ่านให้เอง)'), mapBody);
 let wantNames: string[] = []; // names of the meter picked on the map: the Bluetooth chooser is narrowed to them
+// Range test: with a meter picked on the map, every pass logs the GPS distance to it, and the Bluetooth device is
+// kept so the next run (after walking further away) needs no chooser.
+let target: { lat: number; lon: number } | undefined;
+let here: { lat: number; lon: number; acc: number } | undefined;
+let pickedDev: BluetoothDevice | undefined;
+let watching = false;
+const distLine = h('p');
+const dist = () => (target && here ? distanceM(here.lat, here.lon, target.lat, target.lon) : null);
+const showDist = () => {
+  const d = dist();
+  distLine.textContent = d === null ? (target ? 'รอตำแหน่ง GPS…' : '') : `ระยะถึงมิเตอร์ตอนนี้ ${d.toFixed(0)} ม. (GPS ±${here!.acc.toFixed(0)} ม.)`;
+};
 const showMap = mountMap(mapBody, (p) => {
   const label = p.serial || p.mac;
+  target = { lat: p.lat, lon: p.lon };
+  pickedDev = undefined;
+  if (!watching && 'geolocation' in navigator) {
+    watching = true;
+    navigator.geolocation.watchPosition((g) => { here = { lat: g.coords.latitude, lon: g.coords.longitude, acc: g.coords.accuracy }; showDist(); },
+      () => { /* no GPS: passes are logged without a distance */ }, { enableHighAccuracy: true, maximumAge: 2000 });
+  }
+  showDist();
   void (async () => {
     const m = (await listMeters()).find((x) => normMac(x.mac) === normMac(p.mac));
     mac.value = normMac(p.mac).toLowerCase().match(/../g)!.join(':');
@@ -81,7 +102,7 @@ radioSec.append(
   lab('interval ที่ทดสอบ (×1.25 ms)', itvls), lab('ขอ 2M PHY', phy2m), h('br'), bRun,
 );
 root.append(
-  status, mapSec, pw, lab('รอบต่อค่า', repeats),
+  status, distLine, mapSec, pw, lab('รอบต่อค่า', repeats),
   h('h2', 'ก. จากโทรศัพท์หรือคอมพิวเตอร์โดยตรง (ไม่ใช้หัววิทยุ)'),
   lab('ขนาดก้อนเขียนที่ทดสอบ (ไบต์)', chunks), bPhone,
   radioSec,
@@ -246,7 +267,10 @@ async function runPasses(btn: HTMLButtonElement, list: number[], cfg: (n: number
   for (const n of list) {
     for (let k = 0; k < Number(repeats.value); k++) {
       const p = ++pass;
-      const add: Add = (step, ms, bytes = 0, note = '') => { rows.push({ pass: p, meter, cfg: cfg(n), step, ms, bytes, note }); render(); };
+      const d = dist(); // where the phone stood when the pass started
+      const distM = d === null ? null : Math.round(d), gpsAccM = d === null ? null : Math.round(here!.acc);
+      const add: Add = (step, ms, bytes = 0, note = '') => { rows.push({ pass: p, meter, distM, gpsAccM, cfg: cfg(n), step, ms, bytes, note }); render(); };
+      if (distM !== null) add('ระยะถึงมิเตอร์ (GPS)', 0, 0, `${distM} ม. (±${gpsAccM} ม.)`);
       status.textContent = `รอบ ${p}: ${cfg(n)}…`;
       try { await one(add, n); }
       catch (e) { add('ยกเลิกรอบ', 0, 0, `ผิดพลาด: ${(e as Error).message}`); pw.hidden = false; } // the stored password may be wrong: let it be retyped
@@ -278,10 +302,11 @@ bPhone.onclick = async () => {
     wantNames = []; // one try only: if the name does not match what the meter advertises, the next press lists every meter
     let dev: BluetoothDevice;
     try {
-      dev = await navigator.bluetooth.requestDevice({
+      dev = pickedDev ?? await navigator.bluetooth.requestDevice({
         filters: names.length ? names.map((name) => ({ name })) : SERVICE_UUIDS.map((s) => ({ services: [s] })),
         optionalServices: SERVICE_UUIDS,
       });
+      if (target) pickedDev = dev;
     } catch (e) {
       if (!names.length) throw e;
       status.textContent = `ไม่ได้เลือก ${names.join(' / ')}: ถ้ารายการว่าง กดปุ่มอีกครั้งเพื่อแสดงมิเตอร์ทั้งหมด`;
