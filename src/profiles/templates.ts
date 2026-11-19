@@ -2,7 +2,7 @@ import type { CaptureObject } from '../dlms/types';
 
 export type ColumnSpec = { key: string; obis: string; kind: 'datetime' | 'u8' | 'u16' | 'u32'; scaler: number; unit: string };
 /** datetime Readings: raw = value = ms since epoch (UTC instant), scaler 0, unit ''. */
-export type Reading = { key: string; obis: string; raw: number | null; scaler: number; unit: string; value: number | null; missing: boolean; error?: string }; // error: why a live read is missing
+export type Reading = { key: string; obis: string; raw: number | null; scaler: number; unit: string; value: number | null; missing: boolean; error?: string; derived?: boolean }; // error: why a live read is missing; derived: computed, not read
 
 export const CLOCK_OBIS = '0.0.1.0.0.255';
 const c = (key: string, obis: string, kind: ColumnSpec['kind'], scaler = 0, unit = ''): ColumnSpec => ({ key, obis, kind, scaler, unit });

@@ -21,7 +21,7 @@ function fmt(r?: Reading): { v: string; u: string } {
   if (!r || r.missing || r.value === null) return { v: '—', u: r?.unit ?? '' };
   let v = r.value, u = r.unit;
   if ((u === 'W' || u === 'VA' || u === 'var') && Math.abs(v) >= 1000) { v /= 1000; u = 'k' + u; }
-  return { v: fmtNum(v), u };
+  return { v: (r.derived ? '≈ ' : '') + fmtNum(v), u }; // ≈ marks a value the app computed
 }
 
 const read = (r?: Reading): number | null => (!r || r.missing || r.value === null ? null : r.value);

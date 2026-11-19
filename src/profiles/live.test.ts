@@ -94,9 +94,21 @@ describe('readLive', () => {
     expect(rs.find((r) => r.key === 'voltage')!.value).toBeCloseTo(231.1, 10);
     expect(rs.find((r) => r.key === 'apparentPower')).toMatchObject({ obis: '1.0.29.7.0.255', value: 279 });
     expect(rs.find((r) => r.key === 'powerImport')).toMatchObject({ missing: true }); // neither form exists: still a dash
+    expect(rs.find((r) => r.key === 'apparentPower')!.derived).toBeUndefined(); // read from the meter, not computed
     calls.length = 0;
     await readLive(client, 1);
     expect(calls.filter((c) => c.obis === '1.0.12.7.0.255')).toHaveLength(0);
+  });
+
+  it('computes apparent power as V x I, flagged, when the meter has no such register', async () => {
+    // Field read RE6500567727: 233 V, 1.21 A, and neither 9.7.0 nor 29.7.0.
+    const { client } = fake({
+      '1.0.32.7.0.255': { value: { t: 'u16', v: 23300 }, su: su(-2, 35) },
+      '1.0.31.7.0.255': { value: { t: 'u32', v: 121 }, su: su(-2, 33) },
+    });
+    const s = (await readLive(client, 1)).find((r) => r.key === 'apparentPower')!;
+    expect(s).toMatchObject({ missing: false, derived: true, unit: 'VA', raw: null });
+    expect(s.value).toBeCloseTo(281.93, 6);
   });
 
   it('reads attr 3 once per register across repeated calls', async () => {

@@ -106,5 +106,9 @@ export async function readLive(client: DlmsClient, type: 1 | 3): Promise<Reading
     }
   }
   crossCheckCurrent(out);
+  // The same meter has no apparent-power register in either form: show S = V x I, flagged as computed.
+  const s = out.find((r) => r.key === 'apparentPower');
+  const v = out.find((r) => r.key === 'voltage'), i = out.find((r) => r.key === 'current');
+  if (s?.missing && v?.value != null && i?.value != null) Object.assign(s, { value: v.value * i.value, unit: 'VA', missing: false, derived: true, error: undefined });
   return out;
 }
