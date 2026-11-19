@@ -83,6 +83,22 @@ describe('readLive', () => {
     expect(rs[1]).toMatchObject({ raw: 1500, value: 1.5, unit: 'A', missing: false });
   });
 
+  it('falls back to the phase-L1 register when the meter has no total, and asks for it directly next time', async () => {
+    // Field read RE6500567727: 12.7.0 and 9.7.0 answered object-undefined.
+    const { client, calls } = fake({
+      '1.0.32.7.0.255': { value: { t: 'u16', v: 23110 }, su: su(-2, 35) },
+      '1.0.29.7.0.255': { value: { t: 'u32', v: 27900 }, su: su(-2, 28) },
+    });
+    const rs = await readLive(client, 1);
+    expect(rs.find((r) => r.key === 'voltage')).toMatchObject({ obis: '1.0.32.7.0.255', missing: false });
+    expect(rs.find((r) => r.key === 'voltage')!.value).toBeCloseTo(231.1, 10);
+    expect(rs.find((r) => r.key === 'apparentPower')).toMatchObject({ obis: '1.0.29.7.0.255', value: 279 });
+    expect(rs.find((r) => r.key === 'powerImport')).toMatchObject({ missing: true }); // neither form exists: still a dash
+    calls.length = 0;
+    await readLive(client, 1);
+    expect(calls.filter((c) => c.obis === '1.0.12.7.0.255')).toHaveLength(0);
+  });
+
   it('reads attr 3 once per register across repeated calls', async () => {
     const { client, calls } = fake({ '1.0.12.7.0.255': { value: { t: 'u16', v: 1 }, su: su(0, 35) } });
     await readLive(client, 1);

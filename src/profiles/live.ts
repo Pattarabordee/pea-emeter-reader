@@ -75,17 +75,34 @@ function crossCheckCurrent(out: Reading[]): void {
   if (best.sc !== i.scaler && best.err < 0.3) { i.scaler = best.sc; i.value = scale(raw, best.sc); }
 }
 
+// Field read 2026-11-19, meter RE6500567727 (single-phase): the total registers 12.7.0, 1.7.0, 2.7.0 and 9.7.0 answered
+// object-undefined while the phase-L1 current 31.7.0 read fine. So a refused total is retried as its phase-L1 register.
+const L1_FALLBACK: Record<string, string> = {
+  voltage: '1.0.32.7.0.255', powerImport: '1.0.21.7.0.255', powerExport: '1.0.22.7.0.255', apparentPower: '1.0.29.7.0.255',
+};
+// Per-client: which registers turned out to need the fallback, so later ticks ask for it directly.
+const usesL1 = new WeakMap<DlmsClient, Set<string>>();
+
 export async function readLive(client: DlmsClient, type: 1 | 3): Promise<Reading[]> {
   const out: Reading[] = [];
+  const l1 = usesL1.get(client) ?? usesL1.set(client, new Set()).get(client)!;
   for (const s of LIVE_REGISTERS(type)) {
-    const base = { key: s.key, obis: s.obis, scaler: s.scaler, unit: s.unit };
-    try {
-      const su = await scalerUnit(client, s);
-      const raw = num(await client.get(3, s.obis, 2));
+    const alt = L1_FALLBACK[s.key];
+    const read = async (obis: string): Promise<Reading> => {
+      const su = await scalerUnit(client, { ...s, obis });
+      const raw = num(await client.get(3, obis, 2));
       const scaler = pickScaler(s.key, raw, su.scaler);
-      out.push({ ...base, unit: su.unit, scaler, raw, value: scale(raw, scaler), missing: false });
+      return { key: s.key, obis, unit: su.unit, scaler, raw, value: scale(raw, scaler), missing: false };
+    };
+    try {
+      out.push(await read(alt && l1.has(s.key) ? alt : s.obis));
     } catch (e) {
-      out.push({ ...base, raw: null, value: null, missing: true, error: (e as Error).message });
+      let err = e as Error;
+      // only a refusal by the meter is retried; a timeout or a lost link is not
+      if (alt && !l1.has(s.key) && /data-access-result/.test(err.message)) {
+        try { out.push(await read(alt)); l1.add(s.key); continue; } catch (e2) { err = e2 as Error; }
+      }
+      out.push({ key: s.key, obis: s.obis, scaler: s.scaler, unit: s.unit, raw: null, value: null, missing: true, error: err.message });
     }
   }
   crossCheckCurrent(out);
