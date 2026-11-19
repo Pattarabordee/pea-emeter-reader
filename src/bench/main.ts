@@ -185,12 +185,13 @@ async function dlmsSteps(link: Link, add: Add, password: Uint8Array, preMs: numb
   add('T0 รวม', preMs + (performance.now() - tA));
 
   const eb = await timed('billing: จำนวนแถว', () => getEntriesInUse(client, BILLING));
-  if (eb) await timed('billing: แถวล่าสุด (หน่วยรายเดือน)', buffer(BILLING, { kind: 'by-entry', fromEntry: eb, toEntry: eb, fromSelectedValue: 0, toSelectedValue: 0 }));
+  if (eb) await timed('billing: แถวล่าสุด (หน่วยรายเดือน)', buffer(BILLING, { kind: 'by-entry', fromEntry: eb, toEntry: eb, fromSelectedValue: 1, toSelectedValue: 0 }));
   const cols = await timed('load: โครงสร้างคอลัมน์', () => getCaptureObjects(client, LOAD), (v) => v.map((o) => o.obis).join(' '));
   const el = await timed('load: จำนวนแถว', () => getEntriesInUse(client, LOAD));
   if (el && cols) {
     const from = Math.max(1, el - 99);
-    await timed('load 100 แถว ทุกคอลัมน์', buffer(LOAD, { kind: 'by-entry', fromEntry: from, toEntry: el, fromSelectedValue: 0, toSelectedValue: 0 }), rowsNote);
+    // columns are 1-based; 0 = "through the last" is valid only as the end. Field run 2026-11-19 (meter RE66…): 0/0 returned an empty array.
+    await timed('load 100 แถว ทุกคอลัมน์', buffer(LOAD, { kind: 'by-entry', fromEntry: from, toEntry: el, fromSelectedValue: 1, toSelectedValue: 0 }), rowsNote);
     // columns 1 and 2 are clock and status in the PEA load profile; the rest are the measurements
     await timed('load 100 แถว เฉพาะคอลัมน์ 3 ถึงสุดท้าย', buffer(LOAD, { kind: 'by-entry', fromEntry: from, toEntry: el, fromSelectedValue: 3, toSelectedValue: 0 }), rowsNote);
     const to = new Date(), day = new Date(to.getTime() - 86400000);
