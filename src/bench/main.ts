@@ -7,7 +7,7 @@ import { DlmsClient, type Transport } from '../dlms/client';
 import type { SelectiveAccess } from '../dlms/get';
 import { getCaptureObjects, getEntriesInUse } from '../dlms/profile';
 import { RadioHead, advStats } from '../ble/radioHead';
-import { BleTransport, advertisedNames } from '../ble/transport';
+import { BleTransport, deviceRequest } from '../ble/transport';
 import { SERVICE_UUIDS } from '../ble/uuids';
 import { getPassword, listMeters } from '../store/db';
 import { distanceM, normMac } from '../store/places';
@@ -319,10 +319,7 @@ bPhone.onclick = async () => {
     wantNames = []; // one try only: if the name does not match what the meter advertises, the next press lists every meter
     let dev: BluetoothDevice;
     try {
-      dev = pickedDev ?? await navigator.bluetooth.requestDevice({
-        filters: names.length ? advertisedNames(names).map((name) => ({ name })) : SERVICE_UUIDS.map((s) => ({ services: [s] })),
-        optionalServices: SERVICE_UUIDS,
-      });
+      dev = pickedDev ?? await navigator.bluetooth.requestDevice(deviceRequest(names));
       if (target) pickedDev = dev;
     } catch (e) {
       if (!names.length) throw e;

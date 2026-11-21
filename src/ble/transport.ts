@@ -140,14 +140,19 @@ export function advertisedNames(names: string[]): string[] {
   return [...new Set(names.flatMap((n) => (/^\d+$/.test(n) ? [n, `RE${n}`] : [n])))];
 }
 
+/** requestDevice options: narrow the chooser to one meter by advertised name, else show every BLE device like nRF's
+ *  "No Filter". Field run 2026-11-21 (Khon Kaen): Blue Peacock and Ericsson meters advertise no service UUID, so a
+ *  service filter leaves the chooser empty — acceptAllDevices lists them; the user picks, then we discover the service. */
+export function deviceRequest(names: string[]): RequestDeviceOptions {
+  return names.length
+    ? { filters: advertisedNames(names).map((name) => ({ name })), optionalServices: SERVICE_UUIDS }
+    : { acceptAllDevices: true, optionalServices: SERVICE_UUIDS };
+}
+
 /** Chooser-based connect (cannot target a MAC; Web Bluetooth hides it). Returns the transport and the device's
  *  advertised name (usually the serial), which labels an off-list meter. Glue: field-verified, not run in CI. */
 export async function connectMeter(chunkSize?: number, names: string[] = []): Promise<{ transport: BleTransport; name: string; reopen: () => Promise<BleTransport> }> {
-  const device = await navigator.bluetooth.requestDevice({
-    // `names` narrows the chooser to one meter by its advertised name; empty lists every meter
-    filters: names.length ? advertisedNames(names).map((name) => ({ name })) : SERVICE_UUIDS.map((s) => ({ services: [s] })),
-    optionalServices: SERVICE_UUIDS,
-  });
+  const device = await navigator.bluetooth.requestDevice(deviceRequest(names));
   // reopen: a new link to the same device with no chooser (field run 2026-11-19: Bluefy reconnects in about 1 s)
   const reopen = () => openTransport(device, chunkSize);
   return { transport: await reopen(), name: device.name ?? '', reopen };
